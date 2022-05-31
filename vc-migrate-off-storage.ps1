@@ -1,13 +1,28 @@
 <#
 This script migrates Credential Contracts off from Azure Storage to the new model.
-You need to login with the vc-admin-login.ps1 file first, then also copy the 
-shared access key for the Azure Storage account you are using
 #>
-if ( !$AccessKey ) {
-    write-error "Please set `$AccessKey variable for storage"
+import-module .\VCAdminAPI.psm1
+
+###############################################################################################################
+### MODIFY THESE THREE LINES BEFORE YOU RUN THE SCRIPT ###
+$tenantID = "<tenant-guid>"                                 # Your Azure AD tenant id
+$clientId="<AppId of the app that has AdminAPI permission>" # App that has API Permission to AdminAPI
+$AccessKey = ""                                             # Azure Storage Access Keys - get this from portal
+###############################################################################################################
+
+Connect-AzADVCGraphDevicelogin -TenantId $tenantId -ClientId $clientId
+
+if ( !$global:authHeader ) {
+    write-error "Authentication failed"
+    exit 1
 }
 
-write-host "Retrieving VC Credential Contracts for tenant $($global:tenantId)..."
+if ( !$AccessKey ) {
+    write-error "Please set `$AccessKey variable for storage"
+    exit 1
+}
+
+write-host "Retrieving VC Credential Contracts for tenant $tenantId..."
 $contracts = Get-AzADVCContracts
 
 function PrintMsg($msg) {
@@ -28,6 +43,11 @@ foreach( $contract in $contracts ) {
     $rules = Get-AzADVCFileFromStorage -ResourceUrl $contract.rulesFile -AccessKey $AccessKey
     write-host "Downloading " $contract.displayFile
     $display = Get-AzADVCFileFromStorage -ResourceUrl $contract.displayFile -AccessKey $AccessKey
+
+    if ( !$rules -or !$display ) {
+        write-host "Failed to get display & rules files"
+        continue
+    }
 
     write-host "Converting display definitions..."
     $sep = ""
@@ -108,5 +128,5 @@ foreach( $contract in $contracts ) {
     write-host $newContract
 
     write-host "Updating Contract..."
-    Update-AzADVCContract -Id $contract.Id -Body $newContract -Verbose
+#    Update-AzADVCContract -Id $contract.Id -Body $newContract -Verbose
 } # foreach
