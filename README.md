@@ -33,6 +33,35 @@ Then, to create a session where you can invoke requests to the Admin API, you ru
 .\vc-admin-login.ps1
 ``` 
 
+The powershell module then contains the following commands
+
+Connect-AzADVCGraphDevicelogin
+Enable-AzADVCTenant
+Get-AzADVCContract
+Get-AzADVCContractManifest
+Get-AzADVCContractManifestURL
+Get-AzADVCContracts
+Get-AzADVCCredential
+Get-AzADVCDidDocument
+Get-AzADVCDidExplorer
+Get-AzADVCDirectoryIssuerContracts
+Get-AzADVCDirectoryIssuers
+Get-AzADVCFileFromStorage
+Get-AzADVCIssuer
+Get-AzADVCIssuerLinkedDomainDidConfiguration
+Get-AzADVCIssuers
+Get-AzADVCTenantStatus
+Import-AzADVCFileToStorage
+New-AzADVCContract
+New-AzADVCIssuer
+New-AzADVCWellKnownDidConfiguration
+Remove-AzADVCTenantOptOut
+Revoke-AzADVCCredential
+Rotate-AzADVCIssuerSigningKey
+Set-AzADVCLinkedDomains
+Update-AzADVCContract
+Update-AzADVCIssuer
+
 ## Migrate Off Storage
 Old Credential Contracts uses Azure Storage to stor the display and rules json files while new contracts, created via the QuickStarts, store them internally together with the rest of the contract definition. In order to migrate a contract off storage, you need to update the contract definition. The steps to do that is to get the contract (using the Admin API), get the json files from storage, then change the json definition and finally updating the new contract definition (using the Admin API). The script [vc-aadfree-migration.ps1](vc-aadfree-migration.ps1) does this for all your contracts i  your tenant. You need to have a signed in session for the Admin API and you also need to set the powershell variable `$AccessKey` to the shared access key of your Azure Storage account.
 
