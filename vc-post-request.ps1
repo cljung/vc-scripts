@@ -81,7 +81,7 @@ $request = @"
 }
 
 $url="https://beta.did.msidentity.com/v1.0/$tenantID/verifiablecredentials/request"
-if ( $tetenantRegionScope -eq "EU" ) {
+if ( $tenantRegionScope -eq "EU" ) {
     $url = $url.Replace("https://beta.did", "https://beta.eu.did")
 }
 
