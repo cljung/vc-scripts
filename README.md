@@ -29,6 +29,7 @@ $clientId="<AppId of the app that has AdminAPI permission>" # App that has API P
 Then, to create a session where you can invoke requests to the Admin API, you run the following commands which will set the environment and sign you in and get an access token. The sign in uses the device code flow and if you are already signed into portal.azure.com for your tenant, you should only need to paste the code to sign in.
 
 ```powershell
+import-module .\VCAdminAPI.psm1
 . .\tenant-config.ps1
 .\vc-admin-login.ps1
 ``` 
