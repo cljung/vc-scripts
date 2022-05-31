@@ -39,7 +39,7 @@ function Connect-AzADVCGraphDevicelogin {
     param( 
         [Parameter(Mandatory=$True)][Alias('c')][string]$ClientId,
         [Parameter(Mandatory=$True)][Alias('t')][string]$TenantId,
-        [Parameter()][Alias('s')][string]$Scope = "0135fd85-3010-4e73-a038-12560d2b58a9/full_access",                
+        [Parameter()][Alias('s')][string]$Scope = "6a8b4b39-c021-437c-b060-5a14a3fd65f3/full_access",                
         [Parameter(DontShow)][int]$Timeout = 300, # Timeout in seconds to wait for user to complete sign in process
         # depending on in which browser you may already have a login session started, these switches might come in handy
         [Parameter(Mandatory=$false)][switch]$Chrome = $False,

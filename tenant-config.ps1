@@ -13,4 +13,4 @@ $keyVaultName = "<your-keyvault>"
 $storageAccountName = "<your-storageaccountname>"
 $ContainerPath = "<your-storagecontainername>"
 $clientId="<AppId of the app that has AdminAPI permission>" # App that has API Permission to AdminAPI (scope below)
-$scope = "0135fd85-3010-4e73-a038-12560d2b58a9/full_access"
+$scope = "6a8b4b39-c021-437c-b060-5a14a3fd65f3/full_access"
