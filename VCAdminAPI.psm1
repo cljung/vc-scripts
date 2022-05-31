@@ -76,7 +76,7 @@ if ( !$IsMacOS ) {
             $params = (&{If($Incognito) {"--incognito "} Else {""}}) + (&{If($NewWindow) {"--new-window"} Else {""}})
         } 
         default { 
-            $pgm = "msedge.exe"
+            $pgm = "$env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe"
             $params = (&{If($Incognito) {"-InPrivate "} Else {""}}) + (&{If($NewWindow) {"-new-window"} Else {""}})
         } 
     }  
