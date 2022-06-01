@@ -661,7 +661,7 @@ function Import-AzADVCFileToStorage (
     $bytes = ([System.Text.Encoding]::UTF8.GetBytes($body))
     $contentLength = $bytes.length
     $headers = @{"x-ms-version"="2014-02-14"}
-    $headers.Add("x-ms-date", $((get-date -format r).ToString()) )
+    $headers.Add("x-ms-date", $(([DateTime]::UtcNow.ToString('r')).ToString()) )
     $headers.Add("Content-Length","$contentLength")
     $headers.Add("x-ms-blob-type","BlockBlob")
     $signatureString = "PUT`n`n`n$contentLength`n`n`n`n`n`n`n`n`n"
@@ -696,7 +696,7 @@ function Get-AzADVCFileFromStorage (
     $uri = New-Object System.Uri -ArgumentList $resourceUrl
     $StorageAccountName = $resourceUrl.Split("/")[2].Split(".")[0]
     $headers = @{"x-ms-version"="2014-02-14"}
-    $headers.Add("x-ms-date", $((get-date -format r).ToString()) )
+    $headers.Add("x-ms-date", $(([DateTime]::UtcNow.ToString('r')).ToString()) )
     $signatureString = "GET`n`n`n`n`n`n`n`n`n`n`n`n"
     $signatureString += "x-ms-date:$($headers["x-ms-date"])`nx-ms-version:$($headers["x-ms-version"])`n/$StorageAccountName$($uri.AbsolutePath)"
     $dataToMac = [System.Text.Encoding]::UTF8.GetBytes($signatureString)
