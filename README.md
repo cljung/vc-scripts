@@ -36,37 +36,48 @@ import-module .\VCAdminAPI.psm1
 
 The powershell module then contains the following commands
 
+*** Signin ***
 - Connect-AzADVCGraphDevicelogin
+
+*** Tenant ***
 - Enable-AzADVCTenant
-- Get-AzADVCContract
-- Get-AzADVCContractManifest
-- Get-AzADVCContractManifestURL
-- Get-AzADVCContracts
-- Get-AzADVCCredential
+- Remove-AzADVCTenantOptOut
+- Get-AzADVCTenantStatus
+- Rotate-AzADVCIssuerSigningKey
+
+*** Issuers ***
+- Get-AzADVCIssuer
+- Get-AzADVCIssuers
+- New-AzADVCIssuer
+- Update-AzADVCIssuer
+- New-AzADVCWellKnownDidConfiguration
+- Get-AzADVCIssuerLinkedDomainDidConfiguration
+- Set-AzADVCLinkedDomains
 - Get-AzADVCDidDocument
 - Get-AzADVCDidExplorer
-- Get-AzADVCDirectoryIssuerContracts
-- Get-AzADVCDirectoryIssuers
-- Get-AzADVCFileFromStorage
-- Get-AzADVCIssuer
-- Get-AzADVCIssuerLinkedDomainDidConfiguration
-- Get-AzADVCIssuers
-- Get-AzADVCTenantStatus
-- Import-AzADVCFileToStorage
+
+*** Credential Contracts ***
+- Get-AzADVCContracts
+- Get-AzADVCContract
 - New-AzADVCContract
-- New-AzADVCIssuer
-- New-AzADVCWellKnownDidConfiguration
-- Remove-AzADVCTenantOptOut
-- Revoke-AzADVCCredential
-- Rotate-AzADVCIssuerSigningKey
-- Set-AzADVCLinkedDomains
 - Update-AzADVCContract
-- Update-AzADVCIssuer
+- Get-AzADVCContractManifest
+- Get-AzADVCContractManifestURL
+- Get-AzADVCFileFromStorage
+- Import-AzADVCFileToStorage
+
+*** Credentials ***
+- Get-AzADVCCredential
+- Revoke-AzADVCCredential
+
+*** VC Network ***
+- Get-AzADVCDirectoryIssuers
+- Get-AzADVCDirectoryIssuerContracts
 
 ## Migrate Off Storage
 Old Credential Contracts uses Azure Storage to stor the display and rules json files while new contracts, created via the QuickStarts, store them internally together with the rest of the contract definition. In order to migrate a contract off storage, you need to update the contract definition. The steps to do that is to get the contract (using the Admin API), get the json files from storage, then change the json definition and finally updating the new contract definition (using the Admin API). The script [vc-migrate-off-storage.ps1](vc-migrate-off-storage.ps1) does this for all your contracts i  your tenant. 
 
-This script is written to be executed standalone. You still need VCAdminAPI.psm1 on your machine, but then you only make some changes to `vc-migrate-off-storage.ps1` and you run that script. Get your `tenantId`, `clientId` for the app registration that has API Permissions for Admin API and the `AccessKey` to Azure Storage from portal.azure.com. 
+This script is written to be executed standalone. You still need VCAdminAPI.psm1 on your machine, but then you only make some changes to `vc-migrate-off-storage.ps1` and you run that script. Get your `tenantId`, `clientId` for the app registration that has API Permissions for Admin API and the `AccessKey` to Azure Storage from portal.azure.com. Also, please not that the actual Update command is commented out so you can test run without making changes. If you are ready to migrate, uncomment that line and run again.
 
 ```Powershell
 ###############################################################################################################
@@ -74,6 +85,9 @@ This script is written to be executed standalone. You still need VCAdminAPI.psm1
 $tenantID = "<tenant-guid>"                                 # Your Azure AD tenant id
 $clientId="<AppId of the app that has AdminAPI permission>" # App that has API Permission to AdminAPI
 $AccessKey = ""                                             # Azure Storage Access Keys - get this from portal
+### IMPORTANT !!!
+# Uncomment the last line (Update-AzADVCContract) if you want to update the credential contracts. 
+# It is commented out so you can test run this script without making any chages
 ###############################################################################################################
 ```
 

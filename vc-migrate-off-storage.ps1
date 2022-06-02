@@ -1,6 +1,7 @@
 <#
 This script migrates Credential Contracts off from Azure Storage to the new model.
 #>
+
 import-module .\VCAdminAPI.psm1
 
 ###############################################################################################################
@@ -8,6 +9,9 @@ import-module .\VCAdminAPI.psm1
 $tenantID = "<tenant-guid>"                                 # Your Azure AD tenant id
 $clientId="<AppId of the app that has AdminAPI permission>" # App that has API Permission to AdminAPI
 $AccessKey = ""                                             # Azure Storage Access Keys - get this from portal
+### IMPORTANT !!!
+# Uncomment the last line (Update-AzADVCContract) if you want to update the credential contracts. 
+# It is commented out so you can test run this script without making any chages
 ###############################################################################################################
 
 Connect-AzADVCGraphDevicelogin -TenantId $tenantId -ClientId $clientId
@@ -30,6 +34,19 @@ function PrintMsg($msg) {
     write-host "`n$banner`n* $msg`n$banner"
 }
 
+function MigrateClaimsMapping( $claimsMapping ) {
+    $mapping = ""
+    foreach( $claims in $claimsMapping ) {
+        $sep = ""
+        foreach ($claim in $claims.PSObject.Properties) { 
+            $indexed = "false"
+            if ( $claim.Value.indexed -eq $True ) { $indexed = "true"}
+            $mapping += "$sep{ `"outputClaim`": `"$($claim.Name)`", `"required`": true, `"inputClaim`": `"$($claim.Value.claim)`", `"indexed`": $indexed }"
+            $sep = ",`n              "
+        }
+    }
+    return $mapping
+}
 foreach( $contract in $contracts ) {
     # only process old contracts that uses Azure Storage for display & rules files
     if ( !($contract.rulesFile -and $contract.displayFile) ) {
@@ -54,7 +71,7 @@ foreach( $contract in $contracts ) {
     $displayClaims = ""
     foreach( $claim in $display.default.claims.PSObject.Properties ) {
         $displayClaims += "$sep{ `"claim`": `"$($claim.Name)`", `"label`": `"$($claim.Value.label)`", `"type`": `"$($claim.Value.type)`" }"
-        $sep = ",`n          "
+        $sep = ",`n"
     }
     $newDisplay = @"
 "displays": [
@@ -70,45 +87,50 @@ foreach( $contract in $contracts ) {
 "@
 
     write-host "Converting rules definitions..."
-    foreach( $idToken in $rules.attestations.idTokens ) {
-        $clientId = $idToken.client_id
-        $configuration = $idToken.configuration
-        $redirectUri = $idToken.redirect_uri
-        $scope = $idToken.scope
-        if ( $configuration -eq "https://self-issued.me" ) {
-            $clientId = "ignore"
-            $redirectUri = "ignore"
-            $scope = "ignore"
-        }
-        $mapping = ""
-        foreach( $claims in $idToken.mapping ) {
+    if ( $rules.attestations.idTokens ) {
+        $newRules = "`"idTokens`": ["
+        foreach( $idToken in $rules.attestations.idTokens ) {
             $sep = ""
-            foreach ($claim in $claims.PSObject.Properties) { 
-                $indexed = "false"
-                if ( $claim.Value.indexed -eq $True ) { $indexed = "true"}
-                $mapping += "$sep{ `"outputClaim`": `"$($claim.Name)`", `"required`": true, `"inputClaim`": `"$($claim.Value.claim)`", `"indexed`": $indexed }"
-                $sep = ",`n              "
+            $clientId = $idToken.client_id
+            $configuration = $idToken.configuration
+            $redirectUri = $idToken.redirect_uri
+            $scope = $idToken.scope
+            if ( $configuration -eq "https://self-issued.me" ) {
+                $clientId = "ignore"
+                $redirectUri = "ignore"
+                $scope = "ignore"
             }
+            $mapping = MigrateClaimsMapping $idToken.mapping
+            $newRules += "$sep{ `"clientId`": `"$clientId`",`"configuration`": `"$configuration`", `"redirectUri`": `"$redirectUri`", `"scope`": `"$scope`", `"mapping`": [ $mapping ], `"required`": false }"
+            $sep = ",`n"
         }
+        $newRules += "]"
     }
-    $newRules = @"
-"rules": {
-    "attestations": {
-    "idTokens": [
-        {
-        "clientId": "$clientId",
-        "configuration": "$configuration",
-        "redirectUri": "$redirectUri",
-        "scope": "$scope",
-        "mapping": [ 
-            $mapping
-        ],
-        "required": false
+
+    if ( $rules.attestations.presentations ) {
+        foreach( $presentation in $rules.attestations.presentations ) {
+            $mapping = MigrateClaimsMapping $presentation.mapping
+            $presentation.mapping = ("{ `"mapping`": [ $mapping ] }" | ConvertFrom-json).mapping
         }
-    ]
+        $newRules = ($rules.attestations | ConvertTo-json -Depth 15)
+        $newRules = $newRules.Substring(1, $newRules.Length-2)
     }
-  }
-"@
+
+    if ( $rules.attestations.accessTokens ) {
+        $newRules = "`"accessTokens`": ["
+        foreach( $accessToken in $rules.attestations.accessTokens ) {
+            $sep = ""
+            $mapping = MigrateClaimsMapping $accessToken.mapping
+            $newRules += "$sep{ `"mapping`": [ $mapping ], `"required`": true }"
+            $sep = ",`n"
+        }
+        $newRules += "]"
+    }
+
+    if ( $rules.attestations.selfIssued ) {
+        $mapping = MigrateClaimsMapping $rules.attestations.selfIssued.mapping
+        $newRules = "`"selfIssued`": { `"mapping`": [ $mapping ] }"
+    }
       
     $newContract = @"
 {
@@ -120,13 +142,18 @@ foreach( $contract in $contracts ) {
   "issueNotificationEnabled": $($contract.issueNotificationEnabled.ToString().ToLower()),
   "issueNotificationAllowedToGroupOids": [],
   "availableInVcDirectory": $($contract.availableInVcDirectory.ToString().ToLower()),
-  $newRules,
+  "rules": {
+    "attestations": {
+        $newRules
+    }
+  },
   $newDisplay
 }
 "@
     write-host "New Contract..."
-    write-host $newContract
+    write-host ($newContract | ConvertFrom-json | ConvertTo-json -Depth 15 )
 
     write-host "Updating Contract..."
-#    Update-AzADVCContract -Id $contract.Id -Body $newContract -Verbose
+    $newContract = ($newContract | ConvertFrom-json | ConvertTo-json -Depth 15 -Compress)
+#    Update-AzADVCContract -Id $contract.Id -Body $newContract
 } # foreach
