@@ -587,28 +587,33 @@ function Update-AzADVCContract([Parameter(Mandatory=$True)][string]$Id,
 #>
 function New-AzADVCContract([Parameter(Mandatory=$False)][string]$IssuerId,
                             [Parameter(Mandatory=$True)][string]$Name, 
-                            [Parameter(Mandatory=$True)][string]$StorageResourceID,
-                            [Parameter(Mandatory=$True)][string]$StorageContainerName, 
-                            [Parameter(Mandatory=$True)][string]$RulesFileName, 
-                            [Parameter(Mandatory=$True)][string]$DisplayFileName
+                            [Parameter(Mandatory=$False)][string]$StorageResourceID,
+                            [Parameter(Mandatory=$False)][string]$StorageContainerName, 
+                            [Parameter(Mandatory=$False)][string]$RulesFileName, 
+                            [Parameter(Mandatory=$False)][string]$DisplayFileName,
+                            [Parameter(Mandatory=$False)][string]$Rules, 
+                            [Parameter(Mandatory=$False)][string]$Displays,
+                            [Parameter(Mandatory=$False)][boolean]$AvailableInVcDirectory = $False,
+                            [Parameter(Mandatory=$False)][array]$issueNotificationAllowedToGroupOids = @()
                         )
 {
-    $stgparts=$StorageResourceID.Split("/")
-    if ( $stgparts.Count -ne 9 ) {
-        write-error "Invalid Storage ResourceID"
-        return
-    }
-    if ( !$IssuerId ) {
-        $issuers = Get-AzADVCIssuers
-        $IssuerId = $issuers[0].id
-    }    
-    $RulesFileName = Split-Path $RulesFileName -leaf
-    $DisplayFileName = Split-Path $DisplayFileName -leaf
-    $subscriptionId=$stgparts[2]
-    $resourceGroup=$stgparts[4]
-    $stgName=$stgparts[8]
-    $stgPath="https://$stgName.blob.core.windows.net/$StorageContainerName"
-    $body = @"
+    $body = $null
+
+    # we must either have (Rules + Display) or (Storage* + RulesFileName + DisplayFileName)
+
+    if ( $StorageResourceID -and $StorageContainerName -and $RulesFileName -and $DisplayFileName ) {
+        $stgparts=$StorageResourceID.Split("/")
+        if ( $stgparts.Count -ne 9 ) {
+            write-error "Invalid Storage ResourceID"
+            return
+        }
+        $RulesFileName = Split-Path $RulesFileName -leaf
+        $DisplayFileName = Split-Path $DisplayFileName -leaf
+        $subscriptionId=$stgparts[2]
+        $resourceGroup=$stgparts[4]
+        $stgName=$stgparts[8]
+        $stgPath="https://$stgName.blob.core.windows.net/$StorageContainerName"
+        $body = @"
 {
     "contractName": "$Name",
     "rulesFile": "$stgPath/$RulesFileName",
@@ -629,7 +634,39 @@ function New-AzADVCContract([Parameter(Mandatory=$False)][string]$IssuerId,
     }
 }
 "@
-    return Invoke-AdminAPIUpdate "POST",  "issuers/$IssuerId/contracts" $body 
+    }
+
+    if ( $Rules -and $Displays ) {
+        $groupOids = "[]"
+        $issueNotificationEnabled = $False
+        if ( $issueNotificationAllowedToGroupOids.Length -gt 0 ) {
+            $issueNotificationEnabled = $True
+            $groupOids = ($issueNotificationAllowedToGroupOids | ConvertTo-json -Compress )
+        }
+        $body = @"
+{
+    "contractName": "$Name",
+    "tenantId": "$($global:tenantId)",
+    "status":  "Enabled",
+    "issueNotificationEnabled": $($issueNotificationEnabled.ToString().ToLower()),
+    "issueNotificationAllowedToGroupOids": $groupOids,
+    "availableInVcDirectory": $($availableInVcDirectory.ToString().ToLower()),
+    "rules": $Rules,
+    "displays": $Displays
+}
+"@
+    }
+
+    if ( $null -eq $body ) {
+        write-error "Wrong parameter combination. Specify either Rules+Displays or Storage+Files"
+        return
+    }
+
+    if ( !$IssuerId ) {
+        $issuers = Get-AzADVCIssuers
+        $IssuerId = $issuers[0].id
+    }        
+    return Invoke-AdminAPIUpdate "POST" "issuers/$IssuerId/contracts" $body 
 }
 <#
 .SYNOPSIS
