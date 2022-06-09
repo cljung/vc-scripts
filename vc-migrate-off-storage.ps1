@@ -5,10 +5,12 @@ Uncomment that section when you are ready to migrate
 #>
 param (
     [Parameter(Mandatory=$true)][string]$TenantId,
-    [Parameter(Mandatory=$true)][string]$AccessToken,
+    [Parameter(Mandatory=$True)][string]$ClientId,
     [Parameter(Mandatory=$true)][string]$StorageAccessKey
 )
-$authHeader =@{ 'Content-Type'='application/json'; 'Authorization'='Bearer ' + $AccessToken }
+
+write-host "Signing in to Tenant $TenantId..."
+Connect-AzADDevicelogin -TenantId $tenantId -ClientId $clientId
 
 write-host "Getting Tenant Region..."
 $tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
@@ -18,15 +20,19 @@ if ( $tenantMetadata.tenant_region_scope -eq "EU" ) {
 }
 
 write-host "Retrieving VC Credential Contracts for tenant $tenantId..."
-$contracts = Invoke-RestMethod -Method "GET" -Headers $authHeader -Uri "$baseUrl/contracts" -ErrorAction Stop
+$contracts = Invoke-RestMethod -Method "GET" -Headers $global:authHeader -Uri "$baseUrl/contracts" -ErrorAction Stop
 
+##########################################################################################################
 # just print the 70's style header
+##########################################################################################################
 function PrintMsg($msg) {
     $banner = "".PadLeft(78,"*")
     write-host "`n$banner`n* $msg`n$banner"
 }
 
+##########################################################################################################
 # download a blob from Azure storage using the shared access key
+##########################################################################################################
 function DownloadBlobFromStorage (
     [Parameter(Mandatory=$true)][string]$ResourceUrl,
     [Parameter(Mandatory=$true)][string]$AccessKey
@@ -41,6 +47,66 @@ function DownloadBlobFromStorage (
     $headers.Add("Authorization", "SharedKey " + $StorageAccountName + ":" + $signature);
     return Invoke-RestMethod -Uri $ResourceUrl -Method "GET" -headers $headers
 }
+
+##########################################################################################################
+# login to tenant using device code flow
+##########################################################################################################
+function Connect-AzADDevicelogin( 
+        [Parameter(Mandatory=$True)][string]$ClientId,
+        [Parameter(Mandatory=$True)][string]$TenantId,
+        [Parameter()][string]$Scope = "6a8b4b39-c021-437c-b060-5a14a3fd65f3/full_access",                
+        [Parameter(DontShow)][int]$Timeout = 300 # Timeout in seconds to wait for user to complete sign in process
+)
+{
+    if ( !($Scope -imatch "offline_access") ) { $Scope += " offline_access"} # make sure we get a refresh token
+    $retVal = $null
+    $isMacOS = ($env:PATH -imatch "/usr/bin" )
+    try {
+        $DeviceCodeRequest = Invoke-RestMethod -Method "POST" -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/devicecode" `
+                                                -Body @{ client_id=$ClientId; scope=$scope; } -ContentType "application/x-www-form-urlencoded"
+        Write-Host $DeviceCodeRequest.message -ForegroundColor Yellow
+        $url = $DeviceCodeRequest.verification_uri 
+        Set-Clipboard -Value $DeviceCodeRequest.user_code
+        if ( $isMacOS ) {
+            $ret = [System.Diagnostics.Process]::Start("/usr/bin/open","$url")
+        } else {
+            $ret = [System.Diagnostics.Process]::Start("msedge.exe", "-inprivate -new-window $url")
+        }
+        $TimeoutTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        while ([string]::IsNullOrEmpty($TokenRequest.access_token)) {
+            if ($TimeoutTimer.Elapsed.TotalSeconds -gt $Timeout) {
+                throw 'Login timed out, please try again.'
+            }
+            $TokenRequest = try {
+                Invoke-RestMethod -Method "POST" -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" `
+                                    -Body @{ grant_type="urn:ietf:params:oauth:grant-type:device_code"; code=$DeviceCodeRequest.device_code; client_id=$ClientId} `
+                                    -ErrorAction Stop
+            }
+            catch {
+                $Message = $_.ErrorDetails.Message | ConvertFrom-Json
+                if ($Message.error -ne "authorization_pending") {
+                    throw
+                }
+            }
+            Start-Sleep -Seconds 2
+        }
+        $retVal = $TokenRequest
+    }
+    finally {
+        try {
+            $TimeoutTimer.Stop()
+        }
+        catch {
+            # We don't care about errors here
+        }
+    }
+    $global:authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$retval.token_type + ' ' + $retval.access_token }
+    #return $retval.access_token
+}
+
+##########################################################################################################
+# Main script
+##########################################################################################################
 
 # transform claims mapping into new format
 function MigrateClaimsMapping( $claimsMapping ) {
@@ -171,7 +237,7 @@ foreach( $contract in $contracts ) {
 <# 
     write-host "Updating Contract..."
     $newContract = ($newContract | ConvertFrom-json | ConvertTo-json -Depth 15 -Compress)
-    Invoke-RestMethod -Method "PUT" -Uri "$baseUrl/contracts/$($contract.Id)" -Headers $authHeader -Body $newContract -ContentType "application/json" -ErrorAction Stop
+    Invoke-RestMethod -Method "PUT" -Uri "$baseUrl/contracts/$($contract.Id)" -Headers $global:authHeader -Body $newContract -ContentType "application/json" -ErrorAction Stop
 #>
 
 } # foreach

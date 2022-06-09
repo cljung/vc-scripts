@@ -79,18 +79,16 @@ Old Credential Contracts uses Azure Storage to stor the display and rules json f
 
 This script is written to be executed standalone and you do not need VCAdminAPI.psm1. The script takes three parameters, which are: 
 - **TenantId** - is the guid for your tenant
-- **AccessToken** - an access token that has the `scp` (scope) claim of `full_access ` and the `aud` (audience) claim of `6a8b4b39-c021-437c-b060-5a14a3fd65f3`, which is the `Verifiable Credentials Service Admin`.
+- **ClientId** - An AppId that is registered with API Permission for app `Verifiable Credentials Service Admin` and permission `full_access`. 
 - **StorageAccessKey** - Azure Storage Access Key to your storage. This can be copied from portal.azure.com.
 
 Also, please not that the actual Update command is commented out so you can test run without making changes. If you are ready to migrate, uncomment the last part and run again.
 
 ```Powershell
-.\vc-migrate-off-storage.ps1 -TenantId $TenantId -AccessToken $access_token -StorageAccessKey $StorageAccessKey
+.\vc-migrate-off-storage.ps1 -TenantId $tenantId -ClientId $clientId -StorageAccessKey $StorageAccessKey
 ```
 
-How do I get an access token? Here are two ways:
-1. In portal.azure.com, go to the VC blade for your tenant. Bring up the network view in the developer tools in your browser (F12 in Edge/Chrome), then click on something VC related and find a call to *.msidentity.com. In the request section, you will find the Authorization http header. Copy the base64 value (not including the 'Bearer ' prefix) and set it as a powershell variable you pass to the script. Note - this is a Q&D hack. 
-1. Use the VCAdminAPI.psm1 module, follow the steps above, and login. After a successful login you will have an access token in the global variable `$global:tokens.access_token`  
+The script will start with authenticating via the device code flow where you have to paste in the device code (the script puts it on the clipboard for convenience, so you only have to do Ctrl+V) and then enter your credentials for the tenant. It will ask for an access token with scope to use the app `Verifiable Credentials Service Admin` and permission `full_access`, so the clientId you pass must be registered with that.
 
 ## Test VC Issuance and Presentation using Powershell
 You can test issuance and presentation using just powershell. The two scripts `vc-mini-webserver.ps1` and `vc-post-request.ps1` helps your with that. 
