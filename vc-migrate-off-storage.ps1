@@ -1,39 +1,48 @@
 <#
 This script migrates Credential Contracts off from Azure Storage to the new model.
+The actual update, at the end of this file, is commented out so you can make test runs.
+Uncomment that section when you are ready to migrate
 #>
+param (
+    [Parameter(Mandatory=$true)][string]$TenantId,
+    [Parameter(Mandatory=$true)][string]$AccessToken,
+    [Parameter(Mandatory=$true)][string]$StorageAccessKey
+)
+$authHeader =@{ 'Content-Type'='application/json'; 'Authorization'='Bearer ' + $AccessToken }
 
-import-module .\VCAdminAPI.psm1
-
-###############################################################################################################
-### MODIFY THESE THREE LINES BEFORE YOU RUN THE SCRIPT ###
-$tenantID = "<tenant-guid>"                                 # Your Azure AD tenant id
-$clientId="<AppId of the app that has AdminAPI permission>" # App that has API Permission to AdminAPI
-$AccessKey = ""                                             # Azure Storage Access Keys - get this from portal
-### IMPORTANT !!!
-# Uncomment the last line (Update-AzADVCContract) if you want to update the credential contracts. 
-# It is commented out so you can test run this script without making any chages
-###############################################################################################################
-
-Connect-AzADVCGraphDevicelogin -TenantId $tenantId -ClientId $clientId
-
-if ( !$global:authHeader ) {
-    write-error "Authentication failed"
-    exit 1
-}
-
-if ( !$AccessKey ) {
-    write-error "Please set `$AccessKey variable for storage"
-    exit 1
+write-host "Getting Tenant Region..."
+$tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
+$baseUrl="https://beta.did.msidentity.com/$tenantID/api/portable/v1.0/admin"
+if ( $tenantMetadata.tenant_region_scope -eq "EU" ) {
+    $baseUrl = $baseUrl.Replace("https://beta.did", "https://beta.eu.did")
 }
 
 write-host "Retrieving VC Credential Contracts for tenant $tenantId..."
-$contracts = Get-AzADVCContracts
+$contracts = Invoke-RestMethod -Method "GET" -Headers $authHeader -Uri "$baseUrl/contracts" -ErrorAction Stop
 
+# just print the 70's style header
 function PrintMsg($msg) {
     $banner = "".PadLeft(78,"*")
     write-host "`n$banner`n* $msg`n$banner"
 }
 
+# download a blob from Azure storage using the shared access key
+function DownloadBlobFromStorage (
+    [Parameter(Mandatory=$true)][string]$ResourceUrl,
+    [Parameter(Mandatory=$true)][string]$AccessKey
+    )
+{
+    $uri = New-Object System.Uri -ArgumentList $resourceUrl
+    $StorageAccountName = $resourceUrl.Split("/")[2].Split(".")[0]
+    $headers = @{"x-ms-version"="2014-02-14"}
+    $headers.Add("x-ms-date", $(([DateTime]::UtcNow.ToString('r')).ToString()) )
+    $dataToMac = [System.Text.Encoding]::UTF8.GetBytes("GET`n`n`n`n`n`n`n`n`n`n`n`nx-ms-date:$($headers["x-ms-date"])`nx-ms-version:$($headers["x-ms-version"])`n/$StorageAccountName$($uri.AbsolutePath)")
+    $signature = [System.Convert]::ToBase64String((new-object System.Security.Cryptography.HMACSHA256((,[System.Convert]::FromBase64String($AccessKey)))).ComputeHash($dataToMac))   
+    $headers.Add("Authorization", "SharedKey " + $StorageAccountName + ":" + $signature);
+    return Invoke-RestMethod -Uri $ResourceUrl -Method "GET" -headers $headers
+}
+
+# transform claims mapping into new format
 function MigrateClaimsMapping( $claimsMapping ) {
     $mapping = ""
     foreach( $claims in $claimsMapping ) {
@@ -47,6 +56,8 @@ function MigrateClaimsMapping( $claimsMapping ) {
     }
     return $mapping
 }
+
+# enumerate all contracts 
 foreach( $contract in $contracts ) {
     # only process old contracts that uses Azure Storage for display & rules files
     if ( !($contract.rulesFile -and $contract.displayFile) ) {
@@ -57,9 +68,9 @@ foreach( $contract in $contracts ) {
     PrintMsg "$($contract.contractName) - converting..."
 
     write-host "Downloading " $contract.rulesFile
-    $rules = Get-AzADVCFileFromStorage -ResourceUrl $contract.rulesFile -AccessKey $AccessKey
+    $rules = DownloadBlobFromStorage -ResourceUrl $contract.rulesFile -AccessKey $StorageAccessKey
     write-host "Downloading " $contract.displayFile
-    $display = Get-AzADVCFileFromStorage -ResourceUrl $contract.displayFile -AccessKey $AccessKey
+    $display = DownloadBlobFromStorage -ResourceUrl $contract.displayFile -AccessKey $StorageAccessKey
 
     if ( !$rules -or !$display ) {
         write-host "Failed to get display & rules files"
@@ -89,19 +100,22 @@ foreach( $contract in $contracts ) {
     write-host "Converting rules definitions..."
     if ( $rules.attestations.idTokens ) {
         $newRules = "`"idTokens`": ["
+        # old model didn't separate idTokens from idTokenHints, so we find the difference in the configuration
+        foreach( $idToken in $rules.attestations.idTokens ) {
+            if ( $idToken.configuration -eq "https://self-issued.me" ) {
+                $newRules = "`"idTokenHints`": ["
+                break
+            }
+        }
         foreach( $idToken in $rules.attestations.idTokens ) {
             $sep = ""
-            $clientId = $idToken.client_id
-            $configuration = $idToken.configuration
-            $redirectUri = $idToken.redirect_uri
-            $scope = $idToken.scope
-            if ( $configuration -eq "https://self-issued.me" ) {
-                $clientId = "ignore"
-                $redirectUri = "ignore"
-                $scope = "ignore"
+            $newRules += "$sep{ "
+            # idTokens - add configuration section (not needed anymore for idTokenHints)
+            if ( $idToken.configuration -ne "https://self-issued.me" ) {
+                $newRules += "`"clientId`": `"$($idToken.client_id)`",`"configuration`": `"$($idToken.configuration)`", `"redirectUri`": `"$($idToken.redirect_uri)`", `"scope`": `"$($idToken.scope)`", "
             }
             $mapping = MigrateClaimsMapping $idToken.mapping
-            $newRules += "$sep{ `"clientId`": `"$clientId`",`"configuration`": `"$configuration`", `"redirectUri`": `"$redirectUri`", `"scope`": `"$scope`", `"mapping`": [ $mapping ], `"required`": false }"
+            $newRules += "`"mapping`": [ $mapping ], `"required`": true }"
             $sep = ",`n"
         }
         $newRules += "]"
@@ -110,7 +124,7 @@ foreach( $contract in $contracts ) {
     if ( $rules.attestations.presentations ) {
         foreach( $presentation in $rules.attestations.presentations ) {
             $mapping = MigrateClaimsMapping $presentation.mapping
-            $presentation.mapping = ("{ `"mapping`": [ $mapping ] }" | ConvertFrom-json).mapping
+            $presentation.mapping = ("{ `"mapping`": [ $mapping ], `"required`": true }" | ConvertFrom-json).mapping
         }
         $newRules = ($rules.attestations | ConvertTo-json -Depth 15)
         $newRules = $newRules.Substring(1, $newRules.Length-2)
@@ -129,7 +143,7 @@ foreach( $contract in $contracts ) {
 
     if ( $rules.attestations.selfIssued ) {
         $mapping = MigrateClaimsMapping $rules.attestations.selfIssued.mapping
-        $newRules = "`"selfIssued`": { `"mapping`": [ $mapping ] }"
+        $newRules = "`"selfIssued`": { `"mapping`": [ $mapping ], `"required`": true }"
     }
       
     $newContract = @"
@@ -153,7 +167,11 @@ foreach( $contract in $contracts ) {
     write-host "New Contract..."
     write-host ($newContract | ConvertFrom-json | ConvertTo-json -Depth 15 )
 
+# uncomment this to do the actual update    
+<# 
     write-host "Updating Contract..."
     $newContract = ($newContract | ConvertFrom-json | ConvertTo-json -Depth 15 -Compress)
-#    Update-AzADVCContract -Id $contract.Id -Body $newContract
+    Invoke-RestMethod -Method "PUT" -Uri "$baseUrl/contracts/$($contract.Id)" -Headers $authHeader -Body $newContract -ContentType "application/json" -ErrorAction Stop
+#>
+
 } # foreach

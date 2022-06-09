@@ -77,25 +77,20 @@ The powershell module then contains the following commands
 ## Migrate Off Storage
 Old Credential Contracts uses Azure Storage to stor the display and rules json files while new contracts, created via the QuickStarts, store them internally together with the rest of the contract definition. In order to migrate a contract off storage, you need to update the contract definition. The steps to do that is to get the contract (using the Admin API), get the json files from storage, then change the json definition and finally updating the new contract definition (using the Admin API). The script [vc-migrate-off-storage.ps1](vc-migrate-off-storage.ps1) does this for all your contracts i  your tenant. 
 
-This script is written to be executed standalone. You still need VCAdminAPI.psm1 on your machine, but then you only make some changes to `vc-migrate-off-storage.ps1` and you run that script. Get your `tenantId`, `clientId` for the app registration that has API Permissions for Admin API and the `AccessKey` to Azure Storage from portal.azure.com. Also, please not that the actual Update command is commented out so you can test run without making changes. If you are ready to migrate, uncomment that line and run again.
+This script is written to be executed standalone and you do not need VCAdminAPI.psm1. The script takes three parameters, which are: 
+- **TenantId** - is the guid for your tenant
+- **AccessToken** - an access token that has the `scp` (scope) claim of `full_access ` and the `aud` (audience) claim of `6a8b4b39-c021-437c-b060-5a14a3fd65f3`, which is the `Verifiable Credentials Service Admin`.
+- **StorageAccessKey** - Azure Storage Access Key to your storage. This can be copied from portal.azure.com.
+
+Also, please not that the actual Update command is commented out so you can test run without making changes. If you are ready to migrate, uncomment the last part and run again.
 
 ```Powershell
-###############################################################################################################
-### MODIFY THESE THREE LINES BEFORE YOU RUN THE SCRIPT ###
-$tenantID = "<tenant-guid>"                                 # Your Azure AD tenant id
-$clientId="<AppId of the app that has AdminAPI permission>" # App that has API Permission to AdminAPI
-$AccessKey = ""                                             # Azure Storage Access Keys - get this from portal
-### IMPORTANT !!!
-# Uncomment the last line (Update-AzADVCContract) if you want to update the credential contracts. 
-# It is commented out so you can test run this script without making any chages
-###############################################################################################################
+.\vc-migrate-off-storage.ps1 -TenantId $TenantId -AccessToken $access_token -StorageAccessKey $StorageAccessKey
 ```
 
-Save the script and run it.
-
-```powershell
-.\vc-migrate-off-storage.ps1
-```
+How do I get an access token? Here are two ways:
+1. In portal.azure.com, go to the VC blade for your tenant. Bring up the network view in the developer tools in your browser (F12 in Edge/Chrome), then click on something VC related and find a call to *.msidentity.com. In the request section, you will find the Authorization http header. Copy the base64 value (not including the 'Bearer ' prefix) and set it as a powershell variable you pass to the script. Note - this is a Q&D hack. 
+1. Use the VCAdminAPI.psm1 module, follow the steps above, and login. After a successful login you will have an access token in the global variable `$global:tokens.access_token`  
 
 ## Test VC Issuance and Presentation using Powershell
 You can test issuance and presentation using just powershell. The two scripts `vc-mini-webserver.ps1` and `vc-post-request.ps1` helps your with that. 
