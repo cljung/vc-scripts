@@ -109,7 +109,19 @@ First you run the `vc-post-request.ps1` script to create a request and get a QR 
 Then you run the `vc-mini-webserver.ps1` script which starts a little mini-webserver. Open the browser and navigate to `http://localhost:8080/qrcode.html` to view and scan the QR code. Note that you must have started `ngrok` just as you do when you use the other [samples](https://github.com/Azure-Samples/active-directory-verifiable-credentials). You must also have followed the instructions in the samples for how to do an App Registration that has access to your Azure Key Vault.
 
 ## Generate Request Service API Payloads
-If you want to generate JSON payloads for the Request Service APIs that work with the [samples](https://github.com/Azure-Samples/active-directory-verifiable-credentials) that are based on the Issuer/Contract details in your tenant, you can use the `vc-generate-payloads.ps1` script.
+If you want to generate JSON payloads for the Request Service APIs that work with the [samples](https://github.com/Azure-Samples/active-directory-verifiable-credentials) that are based on the Issuer/Contract details in your tenant, you can use the `vc-generate-payloads-settings.ps1` script. If you have imported the VCAdminAPI.psm1 module and signed in, you can auto-generate the `config.json`, `appsettings.json`, `issuance_request_payload.json` and `presentation_request_payload.json` files by running the following command:
+
+```powershell
+.\vc-generate-payloads-settings.ps1 -ContractName "VerifiedCredentialExpert"
+```
+
+The generated files will have the the credential contract name as part of the file name so you can have files for multiple contracts on your dev machine. The config.json and appsettings.json files will just be updated if they already exists, and updates you have made inbetween runs will be preserved.
+
+- config_VerifiedCredentialExpert.json
+- appsettings.VerifiedCredentialExpert.json
+- issuance_payload_VerifiedCredentialExpert.json
+- presentation_payload_VerifiedCredentialExpert.json
+
 
 ## New 1st party apps AppID migration
 With the support for Azure AD Free for Verifiable Credentials, new AppIDs were introduced. Azure AD tenants that were used for POC/Pilots before this happened need to migrate their configuration. The script `vc-aadfree-migration.ps1` script will help you do that.
