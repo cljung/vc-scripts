@@ -112,24 +112,24 @@ If you want to generate JSON payloads for the Request Service APIs that work wit
 ```powershell
 .\vc-generate-payloads-settings.ps1 -ContractName "VerifiedCredentialExpert" -Node -ClientId $AppId -ClientSecret $AppKey
 
-Generating file .\issuance_request_payload_VerifiedCredentialExpert.json
-Generating file .\presentation_payload_VerifiedCredentialExpert.json
-Generating file .\config_VerifiedCredentialExpert.json
-Generating file .\run.VerifiedCredentialExpert.cmd
-Generating file .\run.VerifiedCredentialExpert.sh
-Generating file .\docker-run.VerifiedCredentialExpert.cmd
-Generating file .\docker-run.VerifiedCredentialExpert.sh
+Generating file .\issuance_request_payload.VerifiedCredentialExpert.<tenantId>.json
+Generating file .\presentation_payload.VerifiedCredentialExpert.<tenantId>.json
+Generating file .\config.VerifiedCredentialExpert.<tenantId>.json
+Generating file .\run.VerifiedCredentialExpert.<tenantId>.cmd
+Generating file .\run.VerifiedCredentialExpert.<tenantId>.sh
+Generating file .\docker-run.VerifiedCredentialExpert.<tenantId>.cmd
+Generating file .\docker-run.VerifiedCredentialExpert.<tenantId>.sh
 ```
 
-The generated files will have the the credential contract name as part of the file name so you can have files for multiple contracts on your dev machine. The config_*.json and appsettings_*.json files will just be updated if they already exists, and updates you have made in between runs will be preserved.
+The generated files will have the the credential contract name as part of the file name so you can have files for multiple contracts on your dev machine. The config*.json and appsettings*.json files will just be updated if they already exists, and updates you have made in between runs will be preserved.
 
-Unless you want to use a client certificate instead of a client secret, you are good to go. For example, the `run.VerifiedCredentialExpert.cmd` will look like this:
+Unless you want to use a client certificate instead of a client secret, you are good to go. For example, the `run.VerifiedCredentialExpert.<tenantId>.cmd` will look like this:
 
 ```cmd
-node app.js .\config_VerifiedCredentialExpert.json .\issuance_request_payload_VerifiedCredentialExpert.json .\presentation_payload_VerifiedCredentialExpert.json
+node app.js .\config.VerifiedCredentialExpert.<tenantId>.json .\issuance_request_payload.VerifiedCredentialExpert.<tenantId>.json .\presentation_payload.VerifiedCredentialExpert.<tenantId>.json
 ```
 
-During the genration, the manifest is downloaded and if you are using the id_token_hint flow, the claims defined in the rules section will be part of the generated `issuance_request_payload_VerifiedCredentialExpert.json` file. 
+During the genration, the manifest is downloaded and if you are using the id_token_hint flow, the claims defined in the rules section will be part of the generated `issuance_request_payload.VerifiedCredentialExpert.<tenantId>.json` file. 
 
 ```json
 {
