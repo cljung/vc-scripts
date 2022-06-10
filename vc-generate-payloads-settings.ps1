@@ -1,8 +1,15 @@
 <#
 This script uses the VCAdminAPI.psm1 module and generates the Request Service API payloads for a given Issuer/Contract
+and the appsettings.json/config.json + run.cmd/sh and docker-run.cmd/sh for the VC Samples
 #>
 param (
-    [Parameter(Mandatory=$true)][string]$ContractName
+    [Parameter(Mandatory=$true)][string]$ContractName,      # VC Credential Contract Name
+    [Parameter(Mandatory=$true)][string]$ClientId,          # AppReg that has scope VerifiableCredentials.Create.All
+    [Parameter(Mandatory=$true)][string]$ClientSecret,      # key for app 
+    [Parameter(Mandatory=$false)][switch]$Dotnet = $False,
+    [Parameter(Mandatory=$false)][switch]$Node = $False,
+    [Parameter(Mandatory=$false)][switch]$Java = $False,
+    [Parameter(Mandatory=$false)][switch]$Python = $False
 )
 
 $contract = Get-AzADVCContracts -Name $ContractName
@@ -10,7 +17,13 @@ $issuer = Get-AzADVCIssuer -Id $contract.issuerId
 $manifestUrl = Get-AzADVCContractManifestURL -IssuerId $issuer.id -Name $contract.contractName
 $manifest = Invoke-RestMethod -Uri $manifestUrl
 
-function SaveToFile( [string]$Path, [string]$Value) {
+$uri = New-Object System.Uri -ArgumentList $manifestUrl
+$RequestAPIEndpoint = "https://$($uri.Host)/v1.0/$($contract.tenantId)/verifiablecredentials/request"
+
+$dirsep = [IO.Path]::DirectorySeparatorChar # to handle Windows/Mac/Linux
+
+function SaveToFile( [string]$Filename, [string]$Value) {
+  $Path = ".$dirsep$Filename"
   write-host "Generating file $Path"
   Set-Content -Path $Path -Value $Value
 }
@@ -54,7 +67,8 @@ $issuancePayload = @"
     }
 }
 "@
-SaveToFile -Path ".\issuance_payload_$($contract.contractName).json" -Value $issuancePayload
+$issuancePayloadFile = "issuance_request_payload_$($contract.contractName).json"
+SaveToFile -Filename $issuancePayloadFile -Value $issuancePayload
 
 ##########################################################################################################
 # Create the presentation payload
@@ -87,56 +101,60 @@ $presentationPayload = @"
     }
   }
 "@
-SaveToFile -Path ".\presentation_payload_$($contract.contractName).json" -Value $presentationPayload
+$presentationPayloadFile = "presentation_payload_$($contract.contractName).json"
+SaveToFile -Filename $presentationPayloadFile -Value $presentationPayload
 
 ##########################################################################################################
 # Create/update the config.json that node/python sample uses
 ##########################################################################################################
+$configFile = "config_$($contract.contractName).json"
 
-# update file if it exist (don't overwrite) or create it if it doesn't exist
-$configFile = ".\config_$($contract.contractName).json"
-if ( Test-Path $configFile ) {
-  $config = (Get-Content $configFile | ConvertFrom-json)
-  $config.AzTenantId = $contract.tenantId
-  $config.IssuerAuthority = $issuer.didModel.did
-  $config.VerifierAuthority = $issuer.didModel.did
-  $config.CredentialManifest = $manifestUrl
-  $configJson = ($config | ConvertTo-json)
-} else {
-$configJson = @"
+if ( $Node -or $Python ) {
+  # update file if it exist (don't overwrite) or create it if it doesn't exist
+  if ( Test-Path $configFile ) {
+    $config = (Get-Content $configFile | ConvertFrom-json)
+    $config.AzTenantId = $contract.tenantId
+    $config.IssuerAuthority = $issuer.didModel.did
+    $config.VerifierAuthority = $issuer.didModel.did
+    $config.CredentialManifest = $manifestUrl
+    $configJson = ($config | ConvertTo-json)
+  } else {
+  $configJson = @"
 {
   "azTenantId": "$($contract.tenantId)",
-  "azClientId": "<YOUR-AAD-CLIENTID-FOR-KEYVAULT-ACCESS>",
-  "azClientSecret": "<YOUR-AAD-CLIENTSECRET-FOR-KEYVAULT-ACCESS>",
+  "azClientId": "$ClientId",
+  "azClientSecret": "$ClientSecret",
   "azCertificateName" : "",
   "azCertificateLocation": "",
   "azCertificatePrivateKeyLocation": "",
-  "CredentialManifest": "$manifest",
+  "CredentialManifest": "$manifestUrl",
   "IssuerAuthority": "$($issuer.didModel.did)",
   "VerifierAuthority": "$($issuer.didModel.did)"
 }
 "@
+  }
+  SaveToFile -Filename $configFile -Value $configJson
 }
-SaveToFile -Path $configFile -Value $configJson
 
 ##########################################################################################################
 # Create/update the appsettings.json that dotnet sample uses
 ##########################################################################################################
-$uri = New-Object System.Uri -ArgumentList $manifestUrl
-$endpoint = "https://$($uri.Host)/v1.0/{0}/verifiablecredentials/request"
 
-# update file if it exist (don't overwrite) or create it if it doesn't exist
-$appsettingsFile = ".\appsettings.$($contract.contractName).json"
-if ( Test-Path $appsettingsFile ) {
-  $appsettings = (Get-Content $appsettingsFile | ConvertFrom-json)
-  $appsettings.AppSettings.TenantId = $contract.tenantId
-  $appsettings.AppSettings.IssuerAuthority = $issuer.didModel.did
-  $appsettings.AppSettings.VerifierAuthority = $issuer.didModel.did
-  $appsettings.AppSettings.CredentialManifest = $manifestUrl
-  $appsettings.AppSettings.Endpoint = $endpoint
-  $appSettingsJson = ($appsettings | ConvertTo-json)
-} else {
-$appSettingsJson = @"
+if ( $Dotnet ) {
+  # update file if it exist (don't overwrite) or create it if it doesn't exist
+  $appsettingsFile = ".$($dirsep)appsettings.$($contract.contractName).json"
+  if ( Test-Path $appsettingsFile ) {
+    $appsettings = (Get-Content $appsettingsFile | ConvertFrom-json)
+    $appsettings.AppSettings.TenantId = $contract.tenantId
+    $appsettings.AppSettings.ClientId = $ClientId
+    $appsettings.AppSettings.ClientSecret = $ClientSecret
+    $appsettings.AppSettings.IssuerAuthority = $issuer.didModel.did
+    $appsettings.AppSettings.VerifierAuthority = $issuer.didModel.did
+    $appsettings.AppSettings.CredentialManifest = $manifestUrl
+    $appsettings.AppSettings.Endpoint = $RequestAPIEndpoint
+    $appSettingsJson = ($appsettings | ConvertTo-json)
+  } else {
+  $appSettingsJson = @"
 {
   "Logging": {
     "LogLevel": {
@@ -147,13 +165,13 @@ $appSettingsJson = @"
   },
   "AllowedHosts": "*",
   "AppSettings": {
-    "Endpoint": "$endpoint",
+    "Endpoint": "$RequestAPIEndpoint",
     "VCServiceScope": "3db474b9-6a0c-4840-96ac-1fceb342124f/.default",
     "Instance": "https://login.microsoftonline.com/{0}",
 
     "TenantId": "$($contract.tenantId)",
-    "ClientId": "APPLICATION CLIENT ID",
-    "ClientSecret": "[client secret or instead use the prefered certificate in the next entry]",
+    "ClientId": "$ClientId",
+    "ClientSecret": "$ClientSecret",
     "CertificateName": "[Or instead of client secret: Enter here the name of a certificate (from the user cert store) as registered with your application]",
     "IssuerAuthority": "$($issuer.didModel.did)",
     "VerifierAuthority": "$($issuer.didModel.did)",
@@ -161,5 +179,125 @@ $appSettingsJson = @"
   }
 }
 "@
+  }
+  SaveToFile -Filename $appsettingsFile -Value $appSettingsJson
 }
-SaveToFile -Path $appsettingsFile -Value $appSettingsJson
+
+##########################################################################################################
+# Create run.cmd/sh and docker-run.cmd/sh
+##########################################################################################################
+$runTarget = $null
+$dockerTarget = $null
+if ( $Node ) {
+  $runTarget = "node app.js"
+  $dockerTarget = "node-aadvc-api-idtokenhint:latest"
+}
+if ( $Python ) {
+  $runTarget = "python app.py"
+  $dockerTarget = "python-aadvc-api-idtokenhint:latest"
+}
+
+if ( $runTarget ) {
+  SaveToFile "run.$($contract.contractName).cmd" "$runTarget .$dirsep$configFile .$dirsep$issuancePayloadFile .$dirsep$presentationPayloadFile"
+  SaveToFile "run.$($contract.contractName).sh" "#!/bin/bash`n$runTarget ./$configFile ./$issuancePayloadFile ./$presentationPayloadFile"
+}
+
+if ( $dockerTarget  ) {
+  $dockerRunCmd= @"
+docker run --rm -it -p 8080:8080 ^
+  -e CONFIGFILE=./$configFile ^
+  -e ISSUANCEFILE=./$issuancePayloadFile ^
+  -e PRESENTATIONFILE=./$presentationPayloadFile ^
+  $dockerTarget
+"@
+  SaveToFile "docker-run.$($contract.contractName).cmd" $dockerRunCmd
+
+  $dockerRunSh = @"
+#!/bin/bash
+docker run --rm -it -p 8080:8080 \
+  -e CONFIGFILE=./$configFile \
+  -e ISSUANCEFILE=./$issuancePayloadFile \
+  -e PRESENTATIONFILE=./$presentationPayloadFile \
+  $dockerTarget  
+"@
+  SaveToFile "docker-run.$($contract.contractName).sh" $dockerRunSh
+}
+
+# Java is special since there is no config.json. Everything i pqassed as envvars to what is defined in application.properties
+if ( $Java ) {
+  $runCmd = @"
+set AADVC_TenantId=$($contract.tenantId)
+set AADVC_ClientID=$ClientId
+set AADVC_ClientSecret=$ClientSecret
+set AADVC_CertName=
+set AADVC_CertLocation=%cd%\AppCreationScripts\aadappcert.crt
+set AADVC_CertKeyLocation=%cd%\AppCreationScripts\aadappcert.key
+set AADVC_ApiKey=$((New-Guid).Guid.ToString())
+set AADVC_ISSUERAUTHORITY=$($issuer.didModel.did)
+set AADVC_VERIFIERAUTHORITY=$($issuer.didModel.did)
+set AADVC_PRESENTATIONFILE=%cd%\$presentationPayloadFile
+set AADVC_ISSUANCEFILE=%cd%\$issuancePayloadFile
+set AADVC_ApiEndpoint=$RequestAPIEndpoint
+set AADVC_CREDENTIALMANIFEST=$manifestUrl
+
+java -jar .\target\java-aadvc-api-idtokenhint-0.0.1-SNAPSHOT.jar
+"@  
+  SaveToFile "run.$($contract.contractName).cmd" $runCmd
+
+  $runSh = @"
+#!/bin/bash
+export AADVC_TenantId=$($contract.tenantId)
+export AADVC_ClientID=$ClientId
+export AADVC_ClientSecret=$ClientSecret
+export AADVC_CertName=
+export AADVC_CertLocation=`$(pwd)/AppCreationScripts/aadappcert.crt
+export AADVC_CertKeyLocation=`$(pwd)/AppCreationScripts/aadappcert.key
+export AADVC_ApiKey=$((New-Guid).Guid.ToString())
+export AADVC_ISSUERAUTHORITY=$($issuer.didModel.did)
+export AADVC_VERIFIERAUTHORITY=$($issuer.didModel.did)
+export AADVC_PRESENTATIONFILE=`$(pwd)/$presentationPayloadFile
+export AADVC_ISSUANCEFILE=`$(pwd)/$issuancePayloadFile
+export AADVC_ApiEndpoint=$RequestAPIEndpoint
+export AADVC_CREDENTIALMANIFEST=$manifestUrl
+
+java -jar ./target/java-aadvc-api-idtokenhint-0.0.1-SNAPSHOT.jar
+"@  
+  SaveToFile "run.$($contract.contractName).sh" $runSh
+
+  $dockerRunCmd = @"
+docker run --rm -it -p 8080:8080 ^
+    -e AADVC_TenantId=$($contract.tenantId) ^
+    -e AADVC_ClientID=$ClientId ^
+    -e AADVC_ClientSecret=$ClientSecret ^
+    -e AADVC_CertName= ^
+    -e AADVC_CertLocation=/usr/local/lib/aadappcert.crt ^
+    -e AADVC_CertKeyLocation=/usr/local/lib/aadappcert.key ^
+    -e AADVC_ApiKey=$((New-Guid).Guid.ToString()) ^
+    -e AADVC_CREDENTIALMANIFEST=$manifestUrl ^
+    -e AADVC_ISSUERAUTHORITY=$($issuer.didModel.did) ^
+    -e AADVC_VERIFIERAUTHORITY=$($issuer.didModel.did) ^
+    -e AADVC_PRESENTATIONFILE=/usr/local/lib/$presentationPayloadFile ^
+    -e AADVC_ISSUANCEFILE=/usr/local/lib/$issuancePayloadFile ^
+    java-aadvc-api-idtokenhint:latest
+"@
+  SaveToFile "docker-run.$($contract.contractName).cmd" $dockerRunCmd
+
+  $dockerRunSh = @"
+docker run --rm -it -p 8080:8080 \
+  -e AADVC_TenantId=$($contract.tenantId) \
+  -e AADVC_ClientID=$ClientId \
+  -e AADVC_ClientSecret=$ClientSecret \
+  -e AADVC_CertName= \
+  -e AADVC_CertLocation=/usr/local/lib/aadappcert.crt \
+  -e AADVC_CertKeyLocation=/usr/local/lib/aadappcert.key \
+  -e AADVC_ApiEndpoint=$RequestAPIEndpoint \
+  -e AADVC_ApiKey=$((New-Guid).Guid.ToString()) \
+  -e AADVC_CREDENTIALMANIFEST=$manifestUrl \
+  -e AADVC_ISSUERAUTHORITY=$($issuer.didModel.did) \
+  -e AADVC_VERIFIERAUTHORITY=$($issuer.didModel.did) \
+  -e AADVC_PRESENTATIONFILE=/usr/local/lib/$presentationPayloadFile \
+  -e AADVC_ISSUANCEFILE=/usr/local/lib/$issuancePayloadFile \
+  java-aadvc-api-idtokenhint:latest
+"@
+  SaveToFile "docker-run.$($contract.contractName).sh" $dockerRunSh
+}

@@ -107,19 +107,59 @@ First you run the `vc-post-request.ps1` script to create a request and get a QR 
 Then you run the `vc-mini-webserver.ps1` script which starts a little mini-webserver. Open the browser and navigate to `http://localhost:8080/qrcode.html` to view and scan the QR code. Note that you must have started `ngrok` just as you do when you use the other [samples](https://github.com/Azure-Samples/active-directory-verifiable-credentials). You must also have followed the instructions in the samples for how to do an App Registration that has access to your Azure Key Vault.
 
 ## Generate Request Service API Payloads
-If you want to generate JSON payloads for the Request Service APIs that work with the [samples](https://github.com/Azure-Samples/active-directory-verifiable-credentials) that are based on the Issuer/Contract details in your tenant, you can use the `vc-generate-payloads-settings.ps1` script. If you have imported the VCAdminAPI.psm1 module and signed in, you can auto-generate the `config.json`, `appsettings.json`, `issuance_request_payload.json` and `presentation_request_payload.json` files by running the following command:
+If you want to generate JSON payloads for the Request Service APIs that work with the [samples](https://github.com/Azure-Samples/active-directory-verifiable-credentials) that are based on the Issuer/Contract details in your tenant, you can use the `vc-generate-payloads-settings.ps1` script. If you have imported the VCAdminAPI.psm1 module and signed in, you can auto-generate the `config.json`, `appsettings.json`, `issuance_request_payload.json` and `presentation_request_payload.json` files by running the below command. 
 
 ```powershell
-.\vc-generate-payloads-settings.ps1 -ContractName "VerifiedCredentialExpert"
+.\vc-generate-payloads-settings.ps1 -ContractName "VerifiedCredentialExpert" -Node -ClientId $AppId -ClientSecret $AppKey
+
+Generating file .\issuance_request_payload_VerifiedCredentialExpert.json
+Generating file .\presentation_payload_VerifiedCredentialExpert.json
+Generating file .\config_VerifiedCredentialExpert.json
+Generating file .\run.VerifiedCredentialExpert.cmd
+Generating file .\run.VerifiedCredentialExpert.sh
+Generating file .\docker-run.VerifiedCredentialExpert.cmd
+Generating file .\docker-run.VerifiedCredentialExpert.sh
 ```
 
-The generated files will have the the credential contract name as part of the file name so you can have files for multiple contracts on your dev machine. The config.json and appsettings.json files will just be updated if they already exists, and updates you have made inbetween runs will be preserved.
+The generated files will have the the credential contract name as part of the file name so you can have files for multiple contracts on your dev machine. The config_*.json and appsettings_*.json files will just be updated if they already exists, and updates you have made in between runs will be preserved.
 
-- config_VerifiedCredentialExpert.json
-- appsettings.VerifiedCredentialExpert.json
-- issuance_payload_VerifiedCredentialExpert.json
-- presentation_payload_VerifiedCredentialExpert.json
+Unless you want to use a client certificate instead of a client secret, you are good to go. For example, the `run.VerifiedCredentialExpert.cmd` will look like this:
 
+```cmd
+node app.js .\config_VerifiedCredentialExpert.json .\issuance_request_payload_VerifiedCredentialExpert.json .\presentation_payload_VerifiedCredentialExpert.json
+```
+
+During the genration, the manifest is downloaded and if you are using the id_token_hint flow, the claims defined in the rules section will be part of the generated `issuance_request_payload_VerifiedCredentialExpert.json` file. 
+
+```json
+{
+    "authority": "did:web:example.com",
+    "includeQRCode": false,
+    "registration": {
+      "clientName": "...set at runtime...",
+      "purpose": "You will be issued with a wonderful VC"
+    },
+    "callback": {
+      "url": "...set at runtime...",
+      "state": "...set at runtime...",
+      "headers": {
+        "api-key": "blabla"
+      }
+    },
+    "issuance": {
+      "type": "VerifiedCredentialExpert",
+      "manifest": "https://beta.eu.did.msidentity.com/v1.0/...your-tenant-id.../verifiableCredential/contracts/VerifiedCredentialExpert",
+      "pin": {
+        "value": "1234",
+        "length": 4
+        },
+      "claims": {
+        "given_name": "PLACEHOLDER", 
+        "family_name": "PLACEHOLDER"
+      }
+    }
+}
+```
 
 ## New 1st party apps AppID migration
 With the support for Azure AD Free for Verifiable Credentials, new AppIDs were introduced. Azure AD tenants that were used for POC/Pilots before this happened need to migrate their configuration. The script `vc-aadfree-migration.ps1` script will help you do that.
