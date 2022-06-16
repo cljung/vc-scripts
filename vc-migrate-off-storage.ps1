@@ -9,19 +9,6 @@ param (
     [Parameter(Mandatory=$true)][string]$StorageAccessKey
 )
 
-write-host "Signing in to Tenant $TenantId..."
-Connect-AzADDevicelogin -TenantId $tenantId -ClientId $clientId
-
-write-host "Getting Tenant Region..."
-$tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
-$baseUrl="https://beta.did.msidentity.com/$tenantID/api/portable/v1.0/admin"
-if ( $tenantMetadata.tenant_region_scope -eq "EU" ) {
-    $baseUrl = $baseUrl.Replace("https://beta.did", "https://beta.eu.did")
-}
-
-write-host "Retrieving VC Credential Contracts for tenant $tenantId..."
-$contracts = Invoke-RestMethod -Method "GET" -Headers $global:authHeader -Uri "$baseUrl/contracts" -ErrorAction Stop
-
 ##########################################################################################################
 # just print the 70's style header
 ##########################################################################################################
@@ -38,11 +25,13 @@ function DownloadBlobFromStorage (
     [Parameter(Mandatory=$true)][string]$AccessKey
     )
 {
+    $ifMac = ""
+    if ( $env:PATH -imatch "/usr/bin" ) { $ifMac = "0" }
     $uri = New-Object System.Uri -ArgumentList $resourceUrl
     $StorageAccountName = $resourceUrl.Split("/")[2].Split(".")[0]
     $headers = @{"x-ms-version"="2014-02-14"}
     $headers.Add("x-ms-date", $(([DateTime]::UtcNow.ToString('r')).ToString()) )
-    $dataToMac = [System.Text.Encoding]::UTF8.GetBytes("GET`n`n`n`n`n`n`n`n`n`n`n`nx-ms-date:$($headers["x-ms-date"])`nx-ms-version:$($headers["x-ms-version"])`n/$StorageAccountName$($uri.AbsolutePath)")
+    $dataToMac = [System.Text.Encoding]::UTF8.GetBytes("GET`n`n`n$IfMac`n`n`n`n`n`n`n`n`nx-ms-date:$($headers["x-ms-date"])`nx-ms-version:$($headers["x-ms-version"])`n/$StorageAccountName$($uri.AbsolutePath)")
     $signature = [System.Convert]::ToBase64String((new-object System.Security.Cryptography.HMACSHA256((,[System.Convert]::FromBase64String($AccessKey)))).ComputeHash($dataToMac))   
     $headers.Add("Authorization", "SharedKey " + $StorageAccountName + ":" + $signature);
     return Invoke-RestMethod -Uri $ResourceUrl -Method "GET" -headers $headers
@@ -51,7 +40,7 @@ function DownloadBlobFromStorage (
 ##########################################################################################################
 # login to tenant using device code flow
 ##########################################################################################################
-function Connect-AzADDevicelogin( 
+function Connect-AzADVCTenantViaDeviceFlow( 
         [Parameter(Mandatory=$True)][string]$ClientId,
         [Parameter(Mandatory=$True)][string]$TenantId,
         [Parameter()][string]$Scope = "6a8b4b39-c021-437c-b060-5a14a3fd65f3/full_access",                
@@ -60,14 +49,13 @@ function Connect-AzADDevicelogin(
 {
     if ( !($Scope -imatch "offline_access") ) { $Scope += " offline_access"} # make sure we get a refresh token
     $retVal = $null
-    $isMacOS = ($env:PATH -imatch "/usr/bin" )
     try {
         $DeviceCodeRequest = Invoke-RestMethod -Method "POST" -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/devicecode" `
                                                 -Body @{ client_id=$ClientId; scope=$scope; } -ContentType "application/x-www-form-urlencoded"
         Write-Host $DeviceCodeRequest.message -ForegroundColor Yellow
         $url = $DeviceCodeRequest.verification_uri 
         Set-Clipboard -Value $DeviceCodeRequest.user_code
-        if ( $isMacOS ) {
+        if ( $env:PATH -imatch "/usr/bin" ) {
             $ret = [System.Diagnostics.Process]::Start("/usr/bin/open","$url")
         } else {
             $ret = [System.Diagnostics.Process]::Start("msedge.exe", "-inprivate -new-window $url")
@@ -104,10 +92,6 @@ function Connect-AzADDevicelogin(
     #return $retval.access_token
 }
 
-##########################################################################################################
-# Main script
-##########################################################################################################
-
 # transform claims mapping into new format
 function MigrateClaimsMapping( $claimsMapping ) {
     $mapping = ""
@@ -122,6 +106,24 @@ function MigrateClaimsMapping( $claimsMapping ) {
     }
     return $mapping
 }
+
+##########################################################################################################
+# Main script
+##########################################################################################################
+
+
+write-host "Signing in to Tenant $TenantId..."
+Connect-AzADVCTenantViaDeviceFlow -TenantId $tenantId -ClientId $clientId
+
+write-host "Getting Tenant Region..."
+$tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
+$baseUrl="https://beta.did.msidentity.com/$tenantID/api/portable/v1.0/admin"
+if ( $tenantMetadata.tenant_region_scope -eq "EU" ) {
+    $baseUrl = $baseUrl.Replace("https://beta.did", "https://beta.eu.did")
+}
+
+write-host "Retrieving VC Credential Contracts for tenant $tenantId..."
+$contracts = Invoke-RestMethod -Method "GET" -Headers $global:authHeader -Uri "$baseUrl/contracts" -ErrorAction Stop
 
 # enumerate all contracts 
 foreach( $contract in $contracts ) {
