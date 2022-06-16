@@ -55,22 +55,22 @@ function Connect-AzADVCTenantViaDeviceFlow(
         Write-Host $DeviceCodeRequest.message -ForegroundColor Yellow
         $url = $DeviceCodeRequest.verification_uri 
         Set-Clipboard -Value $DeviceCodeRequest.user_code
-        $browser = (Get-ItemProperty HKCU:\Software\Microsoft\windows\Shell\Associations\UrlAssociations\http\UserChoice).ProgId
-        $pgm = "$env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe"
-        $params = "-inprivate -new-window"
-        switch( $browser.Replace("HTML", "").Replace("URL", "").ToLower() ) {        
-            "firefox" { 
-                $pgm = "$env:ProgramFiles\Mozilla Firefox\firefox.exe"
-                $params = "-private -new-window"
-            } 
-            "chrome" { 
-                $pgm = "$env:ProgramFiles (x86)\Google\Chrome\Application\chrome.exe"
-                $params = "--incognito --new-window"
-            } 
-        }      
         if ( $env:PATH -imatch "/usr/bin" ) {
             $ret = [System.Diagnostics.Process]::Start("/usr/bin/open","$url")
         } else {
+            $browser = (Get-ItemProperty HKCU:\Software\Microsoft\windows\Shell\Associations\UrlAssociations\http\UserChoice).ProgId
+            $pgm = "$env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe"
+            $params = "-inprivate -new-window"
+            switch( $browser.Replace("HTML", "").Replace("URL", "").ToLower() ) {        
+                "firefox" { 
+                    $pgm = "$env:ProgramFiles\Mozilla Firefox\firefox.exe"
+                    $params = "-private -new-window"
+                } 
+                "chrome" { 
+                    $pgm = "$env:ProgramFiles (x86)\Google\Chrome\Application\chrome.exe"
+                    $params = "--incognito --new-window"
+                } 
+            }      
             $ret = [System.Diagnostics.Process]::Start($pgm,"$params $url")
         }
         $TimeoutTimer = [System.Diagnostics.Stopwatch]::StartNew()
