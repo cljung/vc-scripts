@@ -9,18 +9,7 @@ param (
     [Parameter(Mandatory=$true)][string]$StorageAccessKey
 )
 
-write-host "Signing in to Tenant $TenantId..."
-Connect-AzADDevicelogin -TenantId $tenantId -ClientId $clientId
 
-write-host "Getting Tenant Region..."
-$tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
-$baseUrl="https://beta.did.msidentity.com/$tenantID/api/portable/v1.0/admin"
-if ( $tenantMetadata.tenant_region_scope -eq "EU" ) {
-    $baseUrl = $baseUrl.Replace("https://beta.did", "https://beta.eu.did")
-}
-
-write-host "Retrieving VC Credential Contracts for tenant $tenantId..."
-$contracts = Invoke-RestMethod -Method "GET" -Headers $global:authHeader -Uri "$baseUrl/contracts" -ErrorAction Stop
 
 ##########################################################################################################
 # just print the 70's style header
@@ -104,10 +93,107 @@ function Connect-AzADDevicelogin(
     #return $retval.access_token
 }
 
-##########################################################################################################
-# Main script
-##########################################################################################################
 
+function Connect-AzADVCGraphDevicelogin {
+    param( 
+        [Parameter(Mandatory=$True)][Alias('c')][string]$ClientId,
+        [Parameter(Mandatory=$True)][Alias('t')][string]$TenantId,
+        [Parameter()][Alias('s')][string]$Scope = "6a8b4b39-c021-437c-b060-5a14a3fd65f3/full_access",                
+        [Parameter(DontShow)][int]$Timeout = 300, # Timeout in seconds to wait for user to complete sign in process
+        # depending on in which browser you may already have a login session started, these switches might come in handy
+        [Parameter(Mandatory=$false)][switch]$Chrome = $False,
+        [Parameter(Mandatory=$false)][switch]$Edge = $False,
+        [Parameter(Mandatory=$false)][switch]$Firefox = $False,
+        [Parameter(Mandatory=$false)][switch]$Incognito = $True,
+        [Parameter(Mandatory=$false)][switch]$NewWindow = $True
+)
+
+Function IIf($If, $Right, $Wrong) {If ($If) {$Right} Else {$Wrong}}
+
+if ( !($Scope -imatch "offline_access") ) { $Scope += " offline_access"} # make sure we get a refresh token
+$retVal = $null
+$url = "https://microsoft.com/devicelogin"
+$isMac = ($env:PATH -imatch "/usr/bin" )
+$pgm = "chrome.exe"
+$params = "--incognito --new-window"
+if ( !$IsMacOS ) {
+    $Browser = ""
+    if ( $Chrome ) { $Browser = "Chrome" }
+    if ( $Edge ) { $Browser = "Edge" }
+    if ( $Firefox ) { $Browser = "Firefox" }
+    if ( $browser -eq "") {
+        $browser = (Get-ItemProperty HKCU:\Software\Microsoft\windows\Shell\Associations\UrlAssociations\http\UserChoice).ProgId
+    }
+    $browser = $browser.Replace("HTML", "").Replace("URL", "")
+    switch( $browser.ToLower() ) {        
+        "firefox" { 
+            $pgm = "$env:ProgramFiles\Mozilla Firefox\firefox.exe"
+            $params = (&{If($Incognito) {"-private "} Else {""}}) + (&{If($NewWindow) {"-new-window"} Else {""}})
+        } 
+        "chrome" { 
+            $pgm = "chrome.exe"
+            $params = (&{If($Incognito) {"--incognito "} Else {""}}) + (&{If($NewWindow) {"--new-window"} Else {""}})
+        } 
+        default { 
+            $pgm = "$env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe"
+            $params = (&{If($Incognito) {"-InPrivate "} Else {""}}) + (&{If($NewWindow) {"-new-window"} Else {""}})
+        } 
+    }  
+}
+
+try {
+    $DeviceCodeRequest = Invoke-RestMethod -Method "POST" -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/devicecode" `
+                                            -Body @{ client_id=$ClientId; scope=$scope; } -ContentType "application/x-www-form-urlencoded"
+                                            # for endpoint != v2.0
+                                            #-Body @{ client_id=$ClientId; resource="0135fd85-3010-4e73-a038-12560d2b58a9"; scope="full_access"; } -ContentType "application/x-www-form-urlencoded"
+    #write-host $DeviceCodeRequest
+    Write-Host $DeviceCodeRequest.message -ForegroundColor Yellow
+    $url = $DeviceCodeRequest.verification_uri # url for endpoint != v2.0
+
+    Set-Clipboard -Value $DeviceCodeRequest.user_code
+
+    if ( $isMac ) {
+        $ret = [System.Diagnostics.Process]::Start("/usr/bin/open","$url")
+    } else {
+        $ret = [System.Diagnostics.Process]::Start($pgm,"$params $url")
+    }
+
+    $TimeoutTimer = [System.Diagnostics.Stopwatch]::StartNew()
+    while ([string]::IsNullOrEmpty($TokenRequest.access_token)) {
+        if ($TimeoutTimer.Elapsed.TotalSeconds -gt $Timeout) {
+            throw 'Login timed out, please try again.'
+        }
+        $TokenRequest = try {
+            Invoke-RestMethod -Method "POST" -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" `
+                                -Body @{ grant_type="urn:ietf:params:oauth:grant-type:device_code"; code=$DeviceCodeRequest.device_code; client_id=$ClientId} `
+                                -ErrorAction Stop
+        }
+        catch {
+            $Message = $_.ErrorDetails.Message | ConvertFrom-Json
+            if ($Message.error -ne "authorization_pending") {
+                throw
+            }
+        }
+        Start-Sleep -Seconds 1
+    }
+    $retVal = $TokenRequest
+}
+finally {
+    try {
+        $TimeoutTimer.Stop()
+    }
+    catch {
+        # We don't care about errors here
+    }
+}
+
+$tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
+$global:tenantRegionScope = $tenantMetadata.tenant_region_scope # WW, NA, EU, AF, AS, OC, SA
+
+$global:tenantId = $tenantId
+$global:tokens = $retval
+$global:authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$retval.token_type + ' ' + $retval.access_token }
+}
 # transform claims mapping into new format
 function MigrateClaimsMapping( $claimsMapping ) {
     $mapping = ""
@@ -122,6 +208,25 @@ function MigrateClaimsMapping( $claimsMapping ) {
     }
     return $mapping
 }
+
+##########################################################################################################
+# Main script
+##########################################################################################################
+
+
+
+write-host "Signing in to Tenant $TenantId..."
+Connect-AzADVCGraphDevicelogin -TenantId $tenantId -ClientId $clientId
+
+write-host "Getting Tenant Region..."
+$tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
+$baseUrl="https://beta.did.msidentity.com/$tenantID/api/portable/v1.0/admin"
+if ( $tenantMetadata.tenant_region_scope -eq "EU" ) {
+    $baseUrl = $baseUrl.Replace("https://beta.did", "https://beta.eu.did")
+}
+
+write-host "Retrieving VC Credential Contracts for tenant $tenantId..."
+$contracts = Invoke-RestMethod -Method "GET" -Headers $global:authHeader -Uri "$baseUrl/contracts" -ErrorAction Stop
 
 # enumerate all contracts 
 foreach( $contract in $contracts ) {
