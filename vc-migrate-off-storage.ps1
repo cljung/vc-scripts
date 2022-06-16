@@ -58,7 +58,7 @@ function Connect-AzADVCTenantViaDeviceFlow(
         if ( $env:PATH -imatch "/usr/bin" ) {
             $ret = [System.Diagnostics.Process]::Start("/usr/bin/open","$url")
         } else {
-            $ret = [System.Diagnostics.Process]::Start("msedge.exe", "-inprivate -new-window $url")
+            $ret = [System.Diagnostics.Process]::Start("$env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe", "-inprivate -new-window $url")
         }
         $TimeoutTimer = [System.Diagnostics.Stopwatch]::StartNew()
         while ([string]::IsNullOrEmpty($TokenRequest.access_token)) {

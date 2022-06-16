@@ -72,7 +72,7 @@ if ( !$IsMacOS ) {
             $params = (&{If($Incognito) {"-private "} Else {""}}) + (&{If($NewWindow) {"-new-window"} Else {""}})
         } 
         "chrome" { 
-            $pgm = "chrome.exe"
+            $pgm = "$env:ProgramFiles (x86)\Google\Chrome\Application\chrome.exe"
             $params = (&{If($Incognito) {"--incognito "} Else {""}}) + (&{If($NewWindow) {"--new-window"} Else {""}})
         } 
         default { 
