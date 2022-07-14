@@ -14,7 +14,7 @@ Github repo for sundry Azure AD Verifiable Credentials powershell scripts
 | vc-generate-payloads.ps1 | Script to generate a request Service API payload based on Issuer/Contract |
 
 ## App Registration
-You need to create a new App Registration in your tenant and grant that application the `API Permission` to `Verifiable Credential Service Admin` with permission `full_access`. The app needs `Allow public client flows` enabled under `Authentication`.
+You need to create a new App Registration in your tenant and grant that application the `API Permission` to `Verifiable Credentials Service Admin` with permission `full_access`. The app needs `Allow public client flows` enabled under `Authentication`.
 
 ## Usage
 You need to edit the file [tenat-config.ps1](tenat-config.ps1) and set the id's of your tenant, subscription, etc. The $clientId is the AppId of the app you registered above.
