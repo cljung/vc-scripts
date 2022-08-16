@@ -240,7 +240,9 @@ foreach( $contract in $contracts ) {
   "rules": {
     "attestations": {
         $newRules
-    }
+    },
+  "validityInterval": $($rules.validityInterval),
+  "vc": $($rules.vc | ConvertTo-json)
   },
   $newDisplay
 }

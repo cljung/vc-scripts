@@ -21,10 +21,11 @@ param (
     [Parameter(Mandatory=$true)][string]$AppKey,
     [Parameter(Mandatory=$false)][string]$Scope = "3db474b9-6a0c-4840-96ac-1fceb342124f/.default"
 )
+<#
 write-host "Getting Tenant Region..."
 $tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
 $tenantRegionScope = $tenantMetadata.tenant_region_scope 
-
+#>
 write-host "Acquiring Access Token..."
 $oauth = Invoke-RestMethod -Method Post -Uri "https://login.microsoft.com/$tenantID/oauth2/v2.0//token?api-version=1.0" `
     -Body @{grant_type="client_credentials";client_id=$AppID;client_secret=$AppKey;scope=$Scope}
@@ -52,37 +53,36 @@ $common = @"
 
 # create issuance or presentation request
 if ( $Issue ) {
+  $url="https://beta.did.msidentity.com/v1.0/verifiableCredentials/createIssuanceRequest"
 $request = @"
 {
   $common,
-  "issuance": {
-      "type": "$VcType",
-      "manifest": "$VcManifest"
-  }
+  "type": "$VcType",
+  "manifest": "$VcManifest"
 }
 "@
 } else { # Presentation Request
+  $url="https://beta.did.msidentity.com/v1.0/verifiableCredentials/createPresentationRequest"
 $request = @"
 {
   $common,
-  "presentation": {
-    "includeReceipt": true,
-    "requestedCredentials": [
-      {
-        "type": "$VcType",
-        "manifest": "$VcManifest",
-        "purpose": "the purpose why the verifier asks for a VC",
-        "acceptedIssuers": [ "$DID" ]
-      }
-    ]
+  "includeReceipt": true,
+  "requestedCredentials": [
+    {
+      "type": "$VcType",
+      "manifest": "$VcManifest",
+      "purpose": "the purpose why the verifier asks for a VC",
+      "acceptedIssuers": [ "$DID" ]
+    }
+  ],
+  "configuration": {
+    "validation": {
+      "allowRevoked": true,
+      "validateLinkedDomain": true
+    }
   }
 }
 "@
-}
-
-$url="https://beta.did.msidentity.com/v1.0/$tenantID/verifiablecredentials/request"
-if ( $tenantRegionScope -eq "EU" ) {
-    $url = $url.Replace("https://beta.did", "https://beta.eu.did")
 }
 
 write-host "Calling Request API with a presentation request...`nPOST $url`n$request"

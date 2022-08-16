@@ -1,6 +1,6 @@
-$AdminAPIScriptVersion = "2022-05-31"
+$AdminAPIScriptVersion = "2022-08-16"
 <#
-This file contains a Powershell module for the Azure AD Verifiable Credentials Admin API
+This file contains a Powershell module for the EntraVerifiedID Admin API
 #>
 
 <#
@@ -30,11 +30,11 @@ This file contains a Powershell module for the Azure AD Verifiable Credentials A
     On successful authentication, the command sets global variable $global:authHeader that can be used for authenticating REST API calls
     $global:authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$retval.token_type + ' ' + $retval.access_token }
 .EXAMPLE
-    Connect-AzADVCGraphDevicelogin -TenantId $TenantId -ClientID $clientId -Scope "0135fd85-3010-4e73-a038-12560d2b58a9/full_access"
+    Connect-EntraVerifiedIDGraphDevicelogin -TenantId $TenantId -ClientID $clientId -Scope "0135fd85-3010-4e73-a038-12560d2b58a9/full_access"
 .EXAMPLE
-    Connect-AzADVCGraphDevicelogin -TenantId $TenantId -ClientID $clientId -Scope "0135fd85-3010-4e73-a038-12560d2b58a9/full_access" -Edge -Incognito
+    Connect-EntraVerifiedIDGraphDevicelogin -TenantId $TenantId -ClientID $clientId -Scope "0135fd85-3010-4e73-a038-12560d2b58a9/full_access" -Edge -Incognito
 #>
-function Connect-AzADVCGraphDevicelogin {
+function Connect-EntraVerifiedIDGraphDevicelogin {
     [cmdletbinding()]
     param( 
         [Parameter(Mandatory=$True)][Alias('c')][string]$ClientId,
@@ -144,10 +144,10 @@ $global:authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$retva
 .OUTPUTS
     Updates the global variables $global:tokens and $global:authHeader
 .EXAMPLE
-    Refresh-AzADVCAccessToken
+    Refresh-EntraVerifiedIDAccessToken
 #>
 
-function Refresh-AzADVCAccessToken {
+function Refresh-EntraVerifiedIDAccessToken {
     $token = $global:tokens.access_token.Split(".")[1]
     if ( ($token.Length % 4) -gt 0 ) {
         $token = $token + "".PadRight( 4-($token.Length % 4), "=")
@@ -166,14 +166,17 @@ function Refresh-AzADVCAccessToken {
 ################################################################################################################################################
 function Invoke-RestMethodWithRefresh( [string]$httpMethod, [string]$path, [string]$body, [string]$TenantRegion ) {
     if ( $path.StartsWith("/") ) {
-        $url="https://beta.did.msidentity.com$path"
+        $url="https://verifiedid.did.msidentity.com$path"
     } else {
-        $url="https://beta.did.msidentity.com/$($global:tenantID)/api/portable/v1.0/admin/$path"
+        #$url="https://verifiedid.did.msidentity.com/$($global:tenantID)/api/portable/v1.0/admin/$path"
+        $url="https://verifiedid.did.msidentity.com/v1.0/verifiableCredentials/$path"
     }
+    <#
     if ( !$TenantRegion ) { $TenantRegion = $global:tenantRegionScope }
     if ( $TenantRegion -eq "EU" ) {
         $url = $url.Replace("https://beta.did", "https://beta.eu.did")
     }
+    #>
     write-verbose "$httpMethod $url"
     $needRefresh = $False
     do {
@@ -192,7 +195,7 @@ function Invoke-RestMethodWithRefresh( [string]$httpMethod, [string]$path, [stri
             $streamReader.Close()    
             $needRefresh = $errResp -imatch "token_validation.expired"
             if ( $needRefresh ) {
-                Refresh-AzADVCAccessToken
+                Refresh-EntraVerifiedIDAccessToken
             } else {
                 write-host $errResp -ForegroundColor "Red" -BackgroundColor "Black"
             }
@@ -220,41 +223,25 @@ function Invoke-AdminAPIUpdate( [string]$httpMethod, [string]$path, [string]$bod
 .DESCRIPTION
     Onboards the Azure AD tenant to Verifiable Credentials
 .EXAMPLE
-    Enable-AzADVCTenant
+    Enable-EntraVerifiedIDTenant
 #>
-function Enable-AzADVCTenant() {
+function Enable-EntraVerifiedIDTenant() {
     return Invoke-AdminAPIUpdate "POST"  "onboard" ""
 }
 
 <#
 .SYNOPSIS
-    Gets the status if Azure AD tenant is enabled for Verifiable Credentials
-.DESCRIPTION
-    Gets the status if Azure AD tenant is enabled for Verifiable Credentials.
-.EXAMPLE
-    Get-AzADVCTenantStatus
-.EXAMPLE
-    $ret = Get-AzADVCTenantStatus
-    if ( $ret.status -eq "Enabled" ) {
-        Get-AzADServicePrincipal -Id $ret.servicePrincipal
-    }
-#>
-function Get-AzADVCTenantStatus() {
-    return Invoke-AdminAPIGet "tenants"
-}
-<#
-.SYNOPSIS
     Opts-out Verifiable Credentials for the Azure AD tenant
 .DESCRIPTION
-    Opts-out Verifiable Credentials for the Azure AD tenant, destroying all issuers, cedential contracts and issued credentials
+    Opts-out Verifiable Credentials for the Azure AD tenant, destroying all authorities, cedential contracts and issued credentials
 .PARAMETER Force
     If to not get the 'are you sure?' question
 .EXAMPLE
-    Remove-AzADVCTenantOptOut
+    Remove-EntraVerifiedIDTenantOptOut
 .EXAMPLE
-    Remove-AzADVCTenantOptOut -Force
+    Remove-EntraVerifiedIDTenantOptOut -Force
 #>
-function Remove-AzADVCTenantOptOut( [Parameter(Mandatory=$false)][switch]$Force = $False ) {
+function Remove-EntraVerifiedIDTenantOptOut( [Parameter(Mandatory=$false)][switch]$Force = $False ) {
     if (!$Force ) {
         $answer = (Read-Host "Are you sure you want to Opt-out and delete all credentials? [Y]es or [N]o").ToLower()
         if ( !("yes","y" -contains $answer) ) {
@@ -268,22 +255,22 @@ function Remove-AzADVCTenantOptOut( [Parameter(Mandatory=$false)][switch]$Force 
 #-----------------------------------------------------------------------------------------------------------------------------------------------
 <#
 .SYNOPSIS
-    Creates a new Verifiable Credential Issuer in the Azure AD tenant
+    Creates a new Verifiable Credential authority in Entra Verified ID tenant
 .DESCRIPTION
-    Creates a new Verifiable Credential Issuer in the Azure AD tenant, with it's unique DID
+    Creates a new Verifiable Credential authority in Entra Verified ID, with it's unique DID
 .PARAMETER OrganizationName
-    Name of your issuer organization, like Contoso, Fabrikam or Woodgrove
+    Name of this instance of the Verified ID service, like Contoso, Fabrikam or Woodgrove
 .PARAMETER Domain
-    Domain of your issuer, like https://contoso.com/, https://vc.fabrikam.com/ or https://did.woodgrove.com/
+    Domain linked to this DID, like https://contoso.com/, https://vc.fabrikam.com/ or https://did.woodgrove.com/
 .PARAMETER KeyVaultResourceID
     The Azure ResourceID of the Azure KeyVault instance to be used for signin and encryption keys
 .EXAMPLE
-    New-AzADVCIssuer -OrganizationName "Contoso" -Domain "https://contoso.com" -KeyVaultResourceID $KeyVaultResourceID 
+    New-EntraVerifiedIDAuthority -Name "Contoso" -Domain "https://contoso.com" -KeyVaultResourceID $KeyVaultResourceID 
 #>
-function New-AzADVCIssuer(  [Parameter(Mandatory=$True)][string]$OrganizationName, 
-                            [Parameter(Mandatory=$True)][string]$Domain, 
-                            [Parameter(Mandatory=$True)][string]$KeyVaultResourceID 
-                        )
+function New-EntraVerifiedIDAuthority(  [Parameter(Mandatory=$True)][string]$Name, 
+                                        [Parameter(Mandatory=$True)][string]$Domain, 
+                                        [Parameter(Mandatory=$True)][string]$KeyVaultResourceID 
+                                    )
 {
     $kvparts=$KeyVaultResourceID.Split("/")
     if ( $kvparts.Count -ne 9 ) {
@@ -297,7 +284,7 @@ function New-AzADVCIssuer(  [Parameter(Mandatory=$True)][string]$OrganizationNam
     # "didMethod" : "web",
     $body = @"
 {
-    "issuerName":"$OrganizationName",
+    "issuerName":"$nName",
     "linkedDomainUrl":"$Domain",
     "keyVaultUrl":"$kvUrl",
     "keyVaultMetadata":
@@ -309,170 +296,169 @@ function New-AzADVCIssuer(  [Parameter(Mandatory=$True)][string]$OrganizationNam
     }
 }
 "@
-    return Invoke-AdminAPIUpdate "POST"  "issuers" $body 
+    return Invoke-AdminAPIUpdate "POST"  "authorities" $body 
 }
 <#
 .SYNOPSIS
-    Updates an Issuer
+    Updates an Authority
 .DESCRIPTION
-    Updates and Issuer. Currently, you can only modify what is called 'Organization' in the portal, ie, the name
+    Updates and Authority. Currently, you can only modify display name of the authority
 .PARAMETER Id
-    Id of the Issuer. 
+    Id of the Authority. 
 .OUTPUTS
-    Returns the updated Issuer object
+    Returns the updated Authority object
 .EXAMPLE
-    Update-AzADVCIssuer -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6" -Name "MyNewName"
+    Update-EntraVerifiedIDAuthority -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6" -Name "MyNewName"
 #>
-function Update-AzADVCIssuer( [Parameter(Mandatory=$True)][string]$Id, [Parameter(Mandatory=$True)][string]$OrganizationName ) {
-    $issuer = Invoke-AdminAPIGet "issuers/$id" 
-    if ( !$issuer ) {
-        return $null
-    }
+function Update-EntraVerifiedIDAuthority( [Parameter(Mandatory=$True)][string]$Id, [Parameter(Mandatory=$True)][string]$Name ) {
     $body = @"
 {
-    "issuerName":"$OrganizationName"
+    "name":"$Name"
 }
 "@
-    return Invoke-AdminAPIUpdate "PUT" "issuers/$id" $body 
+    return Invoke-AdminAPIUpdate "POST" "authorities/$id" $body 
 }
 <#
 .SYNOPSIS
-    Rotate the Issuers signing keys
+    Rotate the Authority's signing keys
 .DESCRIPTION
-    Rotate the Issuers signing key, which means rotate in Azure Key Vault and update the Issuer object.
+    Rotate the Authority's signing key, which means rotate in Azure Key Vault and update the Issuer object.
     You manually have to generate the new did document and publish it if the Issuer is using the did:web method
 .PARAMETER Id
-    Id of the Issuer. 
+    Id of the Authority. 
 .OUTPUTS
     Does not return any data
 .EXAMPLE
-    Rotate-AzADVCIssuerSigningKey -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
+    Rotate-EntraVerifiedIDAuthoritySigningKey -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
 #>
-function Rotate-AzADVCIssuerSigningKey( [Parameter(Mandatory=$True)][string]$Id ) {
-    return Invoke-AdminAPIUpdate "POST" "issuers/$id/rotateSigningKey" 
+function Rotate-EntraVerifiedIDAuthoritySigningKey( [Parameter(Mandatory=$True)][string]$Id ) {
+    return Invoke-AdminAPIUpdate "POST" "authorities/$id/rotateSigningKey" 
 }
 
 <#
 .SYNOPSIS
     Updates the domain name(s)
 .DESCRIPTION
-    Update the domain name(s) that is the verified domain for the Issuer instance. The domain names where originally set in the New-AzADVCIssuer command
+    Update the domain name(s) that is the verified domain for the Issuer instance. The domain names where originally set in the New-EntraVerifiedIDIssuer command
 .PARAMETER IssuerId
-    Id of the issuer. If omitted, the first issuer will be used via the Get-AzADVCIssuers command
+    Id of the issuer. If omitted, the first issuer will be used via the Get-EntraVerifiedIDAuthorities command
 .PARAMETER Domains
     String array of domains, like https://contoso.com/, https://vc.fabrikam.com/ or https://did.woodgrove.com/
 .EXAMPLE
-    Set-AzADVCLinkedDomains -Domains @( "https://contoso.com/", "https://vc.fabrikam.com/" )
+    Set-EntraVerifiedIDAuthorityLinkedDomains -Domains @( "https://contoso.com/", "https://vc.fabrikam.com/" )
 .EXAMPLE
-    Set-AzADVCLinkedDomains -IssuerId $issuerId -Domains @( "https://contoso.com/", "https://vc.fabrikam.com/" )
+    Set-EntraVerifiedIDAuthorityLinkedDomains -Id $AuthorityId -Domains @( "https://contoso.com/", "https://vc.fabrikam.com/" )
 #>
-function Set-AzADVCLinkedDomains( [Parameter(Mandatory=$False)][string]$IssuerId, [Parameter(Mandatory=$True)][string[]]$Domains ) {
-    if ( !$IssuerId ) {
-        $issuers = Get-AzADVCIssuers
-        $IssuerId = $issuers[0].id
+function Set-EntraVerifiedIDAuthorityLinkedDomains( [Parameter(Mandatory=$False)][string]$Id, 
+                                                    [Parameter(Mandatory=$True)][string[]]$Domains
+                                                  ) {
+    if ( !$Id ) {
+        $authorities = Get-EntraVerifiedIDAuthorities
+        $Id = $authorities[0].id
     }    
     $body = @"
 {
-    "domains" : $($domains | ConvertTo-Json)
+    "domainUrls" : $($domains | ConvertTo-Json)
 }
 "@    
-    return Invoke-AdminAPIUpdate "POST"  "issuers/$IssuerId/update-linked-domains" $body
+    return Invoke-AdminAPIUpdate "POST"  "authorities/$Id/updateLinkedDomains" $body
 }
 <#
 .SYNOPSIS
     Updates the domain name(s)
 .DESCRIPTION
-    Update the domain name(s) that is the verified domain for the Issuer instance. The domain names where originally set in the New-AzADVCIssuer command
+    Update the domain name(s) that is the verified domain for the Authority instance. The domain names where originally set in the New-EntraVerifiedIDAuthority command
 .PARAMETER IssuerId
-    Id of the issuer. If omitted, the first issuer will be used via the Get-AzADVCIssuers command
+    Id of the Authority. If omitted, the first authority will be used via the Get-EntraVerifiedIDAuthorities command
 .PARAMETER Domain
     Domain, like https://contoso.com/, https://vc.fabrikam.com/ or https://did.woodgrove.com/
 .OUTPUTS
     Returns the content that should be put in the <domain>/.well-known/did-configuration.json file to verify the linked domain
 .EXAMPLE
-    New-AzADVCWellKnownDidConfiguration -Domain "https://contoso.com/"
+    New-EntraVerifiedIDAuthorityWellKnownDidConfiguration -Domain "https://contoso.com/"
 .EXAMPLE
-    New-AzADVCWellKnownDidConfiguration -IssuerId $issuerId -Domain "https://vc.fabrikam.com/"
+    New-EntraVerifiedIDAuthorityWellKnownDidConfiguration -AuthorityId $AuthorityId -Domain "https://vc.fabrikam.com/"
 #>
-function New-AzADVCWellKnownDidConfiguration( [Parameter(Mandatory=$False)][string]$IssuerId, [Parameter(Mandatory=$True)][string]$Domain ) {
-    if ( !$IssuerId ) {
-        $issuers = Get-AzADVCIssuers
-        $IssuerId = $issuers[0].id
+function New-EntraVerifiedIDAuthorityWellKnownDidConfiguration( [Parameter(Mandatory=$False)][string]$Id, 
+                                                                [Parameter(Mandatory=$True)][string]$Domain 
+                                                              ) {
+    if ( !$Id ) {
+        $authorities = Get-EntraVerifiedIDAuthorities
+        $Id = $authorities[0].id
     }    
     $body = @"
 {
-    "domainUrl":"$Domain"
+    "domainUrl": "$Domain"
 }
 "@    
-    return Invoke-AdminAPIUpdate "POST"  "issuers/$IssuerId/well-known-did-configuration" $body
+    return Invoke-AdminAPIUpdate "POST"  "authorities/$Id/generateWellknownDidConfiguration" $body
 }
 <#
 .SYNOPSIS
-    Gets all or a named Issuer
+    Gets all or a named Authorities
 .DESCRIPTION
-    Gets all or a named Issuer from the Azure AD Verifiable Credentials configuration
+    Gets all or a named Authorities from the Entra Verified ID configuration
 .PARAMETER Name
-    Name or the Issuer. If not specified, all Issuers will be returned
+    Name or the Authority. If not specified, all Authorities will be returned
 .OUTPUTS
-    Returns one or all Issuer objects
+    Returns one or all Authorities objects
 .EXAMPLE
-    Get-AzADVCIssuers
+    Get-EntraVerifiedIDAuthorities
 .EXAMPLE
-    Get-AzADVCIssuers -Name "Contoso"
+    Get-EntraVerifiedIDAuthorities -Name "Contoso"
 #>
-function Get-AzADVCIssuers( [Parameter(Mandatory=$False)][string]$Name ) {
-    $issuers = Invoke-AdminAPIGet "issuers" 
+function Get-EntraVerifiedIDAuthorities( [Parameter(Mandatory=$False)][string]$Name ) {
+    $authorities = Invoke-AdminAPIGet "authorities" 
     if ( !$Name ) {
-        return $issuers
+        return $authorities.value
     }
-    return ($issuers | where {$_.issuerName -eq $Name } )
+    return ($issuers.value | where {$_.name -eq $Name } )
 }
 <#
 .SYNOPSIS
-    Gets Issuer by Id
+    Gets Authorities by Id
 .DESCRIPTION
-    Gets Issuer by Id
+    Gets Authorities by Id
 .PARAMETER Id
-    Id of the issuer
+    Id of the Authority
 .OUTPUTS
-    Returns the Issuer object
+    Returns the Authority object
 .EXAMPLE
-    Get-AzADVCIssuers -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
+    Get-EntraVerifiedIDAuthorities -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
 #>
-function Get-AzADVCIssuer( [Parameter(Mandatory=$True)][string]$Id ) {
-    $issuer = Invoke-AdminAPIGet "issuers/$id" 
-    return $issuer
+function Get-EntraVerifiedIDAuthority( [Parameter(Mandatory=$True)][string]$Id ) {
+    $authorities = Invoke-AdminAPIGet "authorities/$id" 
+    return $authorities
 }
-function Get-AzADVCDidDocument( [Parameter(Mandatory=$True)][string]$Id ) {
-    return Invoke-AdminAPIUpdate "POST" "issuers/$id/generateDidDocument" 
+function Get-EntraVerifiedIDDidDocument( [Parameter(Mandatory=$True)][string]$Id ) {
+    return Invoke-AdminAPIUpdate "POST" "authorities/$id/generateDidDocument" 
 }
 
 <#
 .SYNOPSIS
-    Get Linked Domains did-configuration json metadata for an Issuer
+    Get Linked Domains did-configuration json metadata for an Authority
 .DESCRIPTION
-    Get Linked Domains did-configuration json metadata for an Issuer.
+    Get Linked Domains did-configuration json metadata for an Authority.
     If -Raw switch is not passed, the decoded values to pay attention to are:
     - type == DomainLinkageCredential
-    - credentialSubject.id == did for the Issuer. Matches (Get-AzADVCIssuers -Name "Contoso").didModel.did
+    - credentialSubject.id == did for the Authority. Matches (Get-EntraVerifiedIDAuthorities -Name "Contoso").didModel.did
     - credentialSubject.origin == matches the linked domain name
 .PARAMETER Name
-    Name or the Issuer. If not specified, all Issuers will be returned
+    Name or the Authority. If not specified, all Authority will be returned
 .PARAMETER Raw
     Switch if to return the raw did-configuration or if to decode the JWT token
 .OUTPUTS
     Returns one or all did-configuration metadata, decoded or raw
 .EXAMPLE
-    Get-AzADVCIssuerLinkedDomainDidConfiguration -Name "Contoso"
+    Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration -Name "Contoso"
 .EXAMPLE
-    Get-AzADVCIssuerLinkedDomainDidConfiguration -Name "Contoso" -Raw
+    Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration -Name "Contoso" -Raw
 #>
-function Get-AzADVCIssuerLinkedDomainDidConfiguration( [Parameter(Mandatory=$True)][string]$Name,
-                                                       [Parameter(Mandatory=$false)][switch]$Raw = $False )
-{
-    $issuer = Get-AzADVCIssuers -Name $Name
+function Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration( [Parameter(Mandatory=$True)][string]$Name,
+                                                                   [Parameter(Mandatory=$false)][switch]$Raw = $False ) {
+    $authorities = Get-EntraVerifiedIDAuthorities -Name $Name
     $didcfgs = @()
-    foreach( $domain in $issuer.didModel.linkedDomainUrls ) {
+    foreach( $domain in $authorities.didModel.linkedDomainUrls ) {
         $url = "$domain.well-known/did-configuration.json"
         write-verbose "GET $url"
         $cfg = invoke-restmethod -Method "GET" -Uri $url
@@ -498,30 +484,26 @@ function Get-AzADVCIssuerLinkedDomainDidConfiguration( [Parameter(Mandatory=$Tru
 .SYNOPSIS
     Gets all or a named Credential contract
 .DESCRIPTION
-    Gets all or a named Credential contract from the Azure AD Verifiable Credentials configuration
-.PARAMETER IssuerId
-    Id of the issuer. If omitted, the first issuer will be used via the Get-AzADVCIssuers command
+    Gets all or a named Credential contract from the Entra Verified ID configuration
+.PARAMETER AuthorityId
+    Id of the Authority. 
 .PARAMETER Name
-    Name or the Credential contract. If not specified, all Issuers will be returned
+    Name or the Credential contract. If not specified, all contracts will be returned
 .OUTPUTS
     Returns one or all Credential contract objects
 .EXAMPLE
-    Get-AzADVCContracts
+    Get-EntraVerifiedIDContracts
 .EXAMPLE
-    Get-AzADVCContracts -Name "ContosoEmployee"
+    Get-EntraVerifiedIDContracts -Name "ContosoEmployee"
 #>
-function Get-AzADVCContracts([Parameter(Mandatory=$False)][string]$IssuerId,
-                             [Parameter(Mandatory=$False)][string]$Name
-                             )
-{
-    $contracts = Invoke-AdminAPIGet "contracts"
+function Get-EntraVerifiedIDContracts( [Parameter(Mandatory=$True)][string]$AuthorityId,
+                                       [Parameter(Mandatory=$False)][string]$Name
+                                     ) {
+    $contracts = Invoke-AdminAPIGet "authorities/$AuthorityId/contracts"
     if ( $Name.Length -gt 0 ) {
-        return ($contracts | where {$_.contractName -eq $Name } )
+        return ($contracts.value | where {$_.name -eq $Name } )
     }
-    if ( $IssuerId.Length -gt 0 ) {
-        return ($contracts | where {$_.issuerId -eq $IssuerId } )    
-    }
-    return $contracts    
+    return $contracts.value    
 }
 <#
 .SYNOPSIS
@@ -533,18 +515,76 @@ function Get-AzADVCContracts([Parameter(Mandatory=$False)][string]$IssuerId,
 .OUTPUTS
     Returns the contract objects
 .EXAMPLE
-    Get-AzADVCContract -Id "OTg4NTQ1N2EtMjAy...lhbHRlc3Qx"
+    Get-EntraVerifiedIDContract -Id "OTg4NTQ1N2EtMjAy...lhbHRlc3Qx"
 #>
-function Get-AzADVCContract([Parameter(Mandatory=$True)][string]$Id
-                             )
-{
-    return Invoke-AdminAPIGet "contracts/$Id"
+function Get-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$AuthorityId,
+                                      [Parameter(Mandatory=$True)][string]$Id
+                                    ) {
+    return Invoke-AdminAPIGet "authorities/$AuthorityId/contracts/$Id"
 }
 <#
 .SYNOPSIS
-    Updates a Credential contract by id
+    Gets all or a named Credential contract
 .DESCRIPTION
-    Updates a Credential contract by id
+    Gets all or a named Credential contract from the Entra Verified ID configuration
+.PARAMETER AuthorityId
+    Id of the Authority.
+.PARAMETER Name
+    Name or the Credential contract. 
+.PARAMETER Rules
+    The rules definition
+.PARAMETER Displays
+    The display definition
+.PARAMETER AvailableInVcDirectory
+    If the credential contract should be visible in the Entra Verified ID Network
+.PARAMETER issueNotificationAllowedToGroupOids
+    Group directory object ids, if this is a contract of type "VerifiedEmployee"
+.OUTPUTS
+    Returns the newly created Credential contract object
+.EXAMPLE
+    New-EntraVerifiedIDContract -Name "ContosoEmployee" -StorageResourceID $StorageResourceID -RulesFileName "contosofterules.json" -DisplayFileName "contosoftedisplay.json"
+.EXAMPLE
+    New-EntraVerifiedIDContract -AuthorityId $AuthorityId -Name "ContosoEmployee" -StorageResourceID $StorageResourceID -RulesFileName "contosofterules.json" -DisplayFileName "contosoftedisplay.json"
+#>
+function New-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$AuthorityId,
+                                      [Parameter(Mandatory=$True)][string]$Name, 
+                                      [Parameter(Mandatory=$True)][string]$Rules, 
+                                      [Parameter(Mandatory=$True)][string]$Displays,
+                                      [Parameter(Mandatory=$False)][boolean]$AvailableInVcDirectory = $False,
+                                      [Parameter(Mandatory=$False)][array]$issueNotificationAllowedToGroupOids = @()
+                                    ) {
+    $body = $null
+    $issueNotificationEnabled = $False
+    $groupOids = "[]"
+    if ( $issueNotificationAllowedToGroupOids.Length -gt 0 ) {
+        $issueNotificationEnabled = $True
+        $groupOids = ($issueNotificationAllowedToGroupOids | ConvertTo-json -Compress )
+    }
+    $body = @"
+{
+    "name": "$Name",
+    "status":  "Enabled",
+    "issueNotificationEnabled": $($issueNotificationEnabled.ToString().ToLower()),
+    "issueNotificationAllowedToGroupOids": $groupOids,
+    "availableInVcDirectory": $($availableInVcDirectory.ToString().ToLower()),
+    "displays": [ $Displays ],
+    "rules": $Rules
+}
+"@
+
+    if ( !$AuthorityId ) {
+        $authorities = Get-EntraVerifiedIDAuthorities
+        $AuthorityId = $authorities[0].id
+    }        
+    return Invoke-AdminAPIUpdate "POST" "authorities/$AuthorityId/contracts" $body 
+}
+<#
+.SYNOPSIS
+    Updates a Credential contract
+.DESCRIPTION
+    Updates a Credential contract
+.PARAMETER AuthorityId
+    Id of the Authority.
 .PARAMETER Id
     Id of the contract
 .PARAMETER Body
@@ -552,195 +592,13 @@ function Get-AzADVCContract([Parameter(Mandatory=$True)][string]$Id
 .OUTPUTS
     Returns the contract objects
 .EXAMPLE
-    Update-AzADVCContract -Id "OTg4NTQ1N2EtMjAy...lhbHRlc3Qx" -Body $jsonPayload
+    Update-EntraVerifiedIDContract -AuthorityId $AuthorityId -Id $contracId -Body $jsonPayload
 #>
-function Update-AzADVCContract([Parameter(Mandatory=$True)][string]$Id,
-                                [Parameter(Mandatory=$True)]$Body
-                             )
-{
-    return Invoke-AdminAPIUpdate "PUT" "contracts/$Id" $Body
-}
-
-<#
-.SYNOPSIS
-    Gets all or a named Credential contract
-.DESCRIPTION
-    Gets all or a named Credential contract from the Azure AD Verifiable Credentials configuration
-.PARAMETER IssuerId
-    Id of the issuer. If omitted, the first issuer will be used via the Get-AzADVCIssuers command
-.PARAMETER Name
-    Name or the Credential contract. If not specified, all Issuers will be returned
-.PARAMETER StorageResourceID
-    StorageResourceID for where the Display and the Rules files will be stored
-.PARAMETER StorageContainerName
-    Storage container name for where the Display and the Rules files will be stored
-.PARAMETER RulesFileName
-    The filename of the Rules file as it is named in the storage container
-.PARAMETER DisplayFileName
-    The filename of the Display file as it is named in the storage container
-.OUTPUTS
-    Returns the newly created Credential contract object
-.EXAMPLE
-    New-AzADVCContract -Name "ContosoEmployee" -StorageResourceID $StorageResourceID -RulesFileName "contosofterules.json" -DisplayFileName "contosoftedisplay.json"
-.EXAMPLE
-    New-AzADVCContract -IssuerId $issuerId -Name "ContosoEmployee" -StorageResourceID $StorageResourceID -RulesFileName "contosofterules.json" -DisplayFileName "contosoftedisplay.json"
-#>
-function New-AzADVCContract([Parameter(Mandatory=$False)][string]$IssuerId,
-                            [Parameter(Mandatory=$True)][string]$Name, 
-                            [Parameter(Mandatory=$False)][string]$StorageResourceID,
-                            [Parameter(Mandatory=$False)][string]$StorageContainerName, 
-                            [Parameter(Mandatory=$False)][string]$RulesFileName, 
-                            [Parameter(Mandatory=$False)][string]$DisplayFileName,
-                            [Parameter(Mandatory=$False)][string]$Rules, 
-                            [Parameter(Mandatory=$False)][string]$Displays,
-                            [Parameter(Mandatory=$False)][boolean]$AvailableInVcDirectory = $False,
-                            [Parameter(Mandatory=$False)][array]$issueNotificationAllowedToGroupOids = @()
-                        )
-{
-    $body = $null
-
-    # we must either have (Rules + Display) or (Storage* + RulesFileName + DisplayFileName)
-
-    if ( $StorageResourceID -and $StorageContainerName -and $RulesFileName -and $DisplayFileName ) {
-        $stgparts=$StorageResourceID.Split("/")
-        if ( $stgparts.Count -ne 9 ) {
-            write-error "Invalid Storage ResourceID"
-            return
-        }
-        $RulesFileName = Split-Path $RulesFileName -leaf
-        $DisplayFileName = Split-Path $DisplayFileName -leaf
-        $subscriptionId=$stgparts[2]
-        $resourceGroup=$stgparts[4]
-        $stgName=$stgparts[8]
-        $stgPath="https://$stgName.blob.core.windows.net/$StorageContainerName"
-        $body = @"
-{
-    "contractName": "$Name",
-    "rulesFile": "$stgPath/$RulesFileName",
-    "displayFile": "$stgPath/$DisplayFileName",
-    "rulesFileContainerMetadata": {
-        "subscriptionId": "$subscriptionId",
-        "resourceGroup": "$resourceGroup",
-        "resourceName": "$stgName",
-        "container": "$StorageContainerName",
-        "resourceUrl": "$stgPath/$RulesFileName"
-    },
-    "displayFileContainerMetadata": {
-        "subscriptionId": "$subscriptionId",
-        "resourceGroup": "$resourceGroup",
-        "resourceName": "$stgName",
-        "container": "$StorageContainerName",
-        "resourceUrl": "$stgPath/$DisplayFileName"
-    }
-}
-"@
-    }
-
-    if ( $Rules -and $Displays ) {
-        $groupOids = "[]"
-        $issueNotificationEnabled = $False
-        if ( $issueNotificationAllowedToGroupOids.Length -gt 0 ) {
-            $issueNotificationEnabled = $True
-            $groupOids = ($issueNotificationAllowedToGroupOids | ConvertTo-json -Compress )
-        }
-        $body = @"
-{
-    "contractName": "$Name",
-    "tenantId": "$($global:tenantId)",
-    "status":  "Enabled",
-    "issueNotificationEnabled": $($issueNotificationEnabled.ToString().ToLower()),
-    "issueNotificationAllowedToGroupOids": $groupOids,
-    "availableInVcDirectory": $($availableInVcDirectory.ToString().ToLower()),
-    "rules": $Rules,
-    "displays": $Displays
-}
-"@
-    }
-
-    if ( $null -eq $body ) {
-        write-error "Wrong parameter combination. Specify either Rules+Displays or Storage+Files"
-        return
-    }
-
-    if ( !$IssuerId ) {
-        $issuers = Get-AzADVCIssuers
-        $IssuerId = $issuers[0].id
-    }        
-    return Invoke-AdminAPIUpdate "POST" "issuers/$IssuerId/contracts" $body 
-}
-<#
-.SYNOPSIS
-    Uploads a local file to an Azure Storage blob
-.DESCRIPTION
-    Uploads a local file to an Azure Storage blob
-.PARAMETER LocalFile
-    Full path to the local file. The filename.ext will be used as the blob name
-.PARAMETER StorageAccountName
-    Name or the Credential contract. If not specified, all Issuers will be returned
-.PARAMETER ContainerPath
-    Name of the container and possibly an additional path, like "containername" or "containername/path2" 
-.PARAMETER AccessKey
-    The access key to the Azure Storage Account
-.EXAMPLE
-    Import-AzADVCFileToStorage -LocalFile "C:\mydir\myrulesfile.json" -StorageAccountName "mystgaccount" -ContainerPath "vccontracts" -AccessKey $key
-#>
-function Import-AzADVCFileToStorage (
-    [Parameter(Mandatory=$true)][string]$LocalFile,
-    [Parameter(Mandatory=$true)][string]$StorageAccountName,
-    [Parameter(Mandatory=$true)][string]$ContainerPath,
-    [Parameter(Mandatory=$true)][string]$AccessKey
-    )
-{
-    $body = (Get-Content $LocalFile)
-    $FileName = Split-Path $LocalFile -leaf
-    $Url = "https://$StorageAccountName.blob.core.windows.net/$ContainerPath/$Filename"
-    $uri = New-Object System.Uri -ArgumentList $url
-    $bytes = ([System.Text.Encoding]::UTF8.GetBytes($body))
-    $contentLength = $bytes.length
-    $headers = @{"x-ms-version"="2014-02-14"}
-    $headers.Add("x-ms-date", $(([DateTime]::UtcNow.ToString('r')).ToString()) )
-    $headers.Add("Content-Length","$contentLength")
-    $headers.Add("x-ms-blob-type","BlockBlob")
-    $signatureString = "PUT`n`n`n$contentLength`n`n`n`n`n`n`n`n`n"
-    $signatureString += "x-ms-blob-type:$($headers["x-ms-blob-type"])`nx-ms-date:$($headers["x-ms-date"])`nx-ms-version:$($headers["x-ms-version"])`n/$StorageAccountName$($uri.AbsolutePath)"
-    $dataToMac = [System.Text.Encoding]::UTF8.GetBytes($signatureString)
-    $accountKeyBytes = [System.Convert]::FromBase64String($AccessKey)
-    $hmac = new-object System.Security.Cryptography.HMACSHA256((,$accountKeyBytes))
-    $signature = [System.Convert]::ToBase64String($hmac.ComputeHash($dataToMac))
-    $headers.Add("Authorization", "SharedKey " + $StorageAccountName + ":" + $signature);
-
-    write-host "PUT $LocalFile ==> $Url`r`n$contentLength byte(s)"
-    $resp = Invoke-RestMethod -Uri $Url -Method "PUT" -headers $headers -Body $body
-    $resp
-}
-<#
-.SYNOPSIS
-    Downloads an Azure Storage blob file 
-.DESCRIPTION
-    Downloads an Azure Storage blob file
-.PARAMETER ResourceUrl
-    THe url to the Azure Storage blob file
-.PARAMETER AccessKey
-    The access key to the Azure Storage Account
-.EXAMPLE
-    Get-AzADVCFileFromStorage -ResourceUrl "https://myaccount.blob.core.windows.net/didstg/displayfile.json" -AccessKey $key
-#>
-function Get-AzADVCFileFromStorage (
-    [Parameter(Mandatory=$true)][string]$ResourceUrl,
-    [Parameter(Mandatory=$true)][string]$AccessKey
-    )
-{
-    $uri = New-Object System.Uri -ArgumentList $resourceUrl
-    $StorageAccountName = $resourceUrl.Split("/")[2].Split(".")[0]
-    $headers = @{"x-ms-version"="2014-02-14"}
-    $headers.Add("x-ms-date", $(([DateTime]::UtcNow.ToString('r')).ToString()) )
-    $signatureString = "GET`n`n`n`n`n`n`n`n`n`n`n`n"
-    $signatureString += "x-ms-date:$($headers["x-ms-date"])`nx-ms-version:$($headers["x-ms-version"])`n/$StorageAccountName$($uri.AbsolutePath)"
-    $dataToMac = [System.Text.Encoding]::UTF8.GetBytes($signatureString)
-    $hmac = new-object System.Security.Cryptography.HMACSHA256((,[System.Convert]::FromBase64String($AccessKey)))
-    $signature = [System.Convert]::ToBase64String($hmac.ComputeHash($dataToMac))   
-    $headers.Add("Authorization", "SharedKey " + $StorageAccountName + ":" + $signature);
-    return Invoke-RestMethod -Uri $ResourceUrl -Method "GET" -headers $headers
+function Update-EntraVerifiedIDContract( [Parameter(Mandatory=$True)][string]$AuthorityId,
+                                         [Parameter(Mandatory=$True)][string]$Id,
+                                         [Parameter(Mandatory=$True)]$Body
+                                       ) {
+    return Invoke-AdminAPIUpdate "PATCH" "authorities/$AuthorityId/contracts/$Id" $Body
 }
 #-----------------------------------------------------------------------------------------------------------------------------------------------
 # Credentials (ie what is issued to holders)
@@ -751,23 +609,22 @@ function Get-AzADVCFileFromStorage (
 .DESCRIPTION
     Searches for issued credentials based on indexed claim value
 .PARAMETER ContractId
-    Id of the Credential contract. Can be retrieved by the Get-AzADVCContracts command
+    Id of the Credential contract. Can be retrieved by the Get-EntraVerifiedIDContracts command
 .PARAMETER ClaimValue
     Value of the indexed claim
 .OUTPUTS
     Returns all issued credentials that matches the indexed claim value
 .EXAMPLE
-    Get-AzADVCCredential -ContractId $contractId -ClaimValue "alice@contoso.com"
+    Get-EntraVerifiedIDCredentials -AuthorityId $AuthorityId -ContractId $contractId -ClaimValue "alice@contoso.com"
 #>
-function Get-AzADVCCredential(
-    [Parameter(Mandatory=$true)][string]$ContractId,    
-    [Parameter(Mandatory=$true)][string]$ClaimValue
-) 
-{
+function Get-EntraVerifiedIDCredentials( [Parameter(Mandatory=$true)][string]$AuthorityId,
+                                         [Parameter(Mandatory=$true)][string]$ContractId,    
+                                         [Parameter(Mandatory=$true)][string]$ClaimValue
+                                       ) {
     $hasher = [System.Security.Cryptography.HashAlgorithm]::Create('sha256')
     $hash = $hasher.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($ContractId + $ClaimValue))   
     $hashedsearchclaimvalue = [System.Web.HttpUtility]::UrlEncode( [Convert]::ToBase64String($hash) )
-    return Invoke-AdminAPIGet "contracts/$contractid/cards?filter=indexclaim eq $hashedsearchclaimvalue"
+    return Invoke-AdminAPIGet "authorities/$AuthorityId/contracts/$contractid/credentials?filter=indexclaim eq $hashedsearchclaimvalue"
 }
 <#
 .SYNOPSIS
@@ -775,36 +632,34 @@ function Get-AzADVCCredential(
 .DESCRIPTION
     Revokes an issued credentials based on its id. This operation is irreversable
 .PARAMETER IssuerId
-    Id of the issuer. If omitted, the first issuer will be used via the Get-AzADVCIssuers command
+    Id of the issuer. If omitted, the first issuer will be used via the Get-EntraVerifiedIDAuthorities command
 .PARAMETER ContractId
-    Id of the Credential contract. Can be retrieved by the Get-AzADVCContracts command
-.PARAMETER CardId
+    Id of the Credential contract. Can be retrieved by the Get-EntraVerifiedIDContracts command
+.PARAMETER CredentialId
     Id of the issued credential
 .PARAMETER Force
     If to not get the 'are you sure?' question
 .EXAMPLE
-    Revoke-AzADVCCredential -IssuerId $issuerId -ContractId $contractId -CardId $cardId
+    Revoke-EntraVerifiedIDCredential -AuthorityId $AuthorityId -ContractId $contractId -CardId $cardId
 .EXAMPLE
-    Revoke-AzADVCCredential -IssuerId $issuerId -ContractId $contractId -CardId $cardId -Force
+    Revoke-EntraVerifiedIDCredential -AuthorityId $AuthorityId -ContractId $contractId -CardId $cardId -Force
 #>
-function Revoke-AzADVCCredential(
-    [Parameter(Mandatory=$false)][string]$IssuerId,    
-    [Parameter(Mandatory=$true)][string]$ContractId,    
-    [Parameter(Mandatory=$true)][string]$CardId,
-    [Parameter(Mandatory=$false)][switch]$Force = $False
-) 
-{
+function Revoke-EntraVerifiedIDCredential( [Parameter(Mandatory=$false)][string]$AuthorityId,    
+                                           [Parameter(Mandatory=$true)][string]$ContractId,    
+                                           [Parameter(Mandatory=$true)][string]$CredentialId,
+                                           [Parameter(Mandatory=$false)][switch]$Force = $False
+                                         ) {
     if (!$Force ) {
         $answer = (Read-Host "Are you sure you want to Revoke the Credential $CardId? [Y]es or [N]o").ToLower()
         if ( !("yes","y" -contains $answer) ) {
             return
         }
     }
-    if ( !$IssuerId ) {
-        $issuers = Get-AzADVCIssuers
-        $IssuerId = $issuers[0].id
+    if ( !$AuthorityId ) {
+        $issuers = Get-EntraVerifiedIDAuthorities
+        $AuthorityId = $issuers[0].id
     }    
-    return Invoke-AdminAPIUpdate "POST" "issuers/$IssuerId/contracts/$ContractId/cards/$CardId/revoke" ""
+    return Invoke-AdminAPIUpdate "POST" "authorities/$AuthorityId/contracts/$ContractId/credentials/$CredentialId/revoke" ""
 }
 ################################################################################################################################################
 # Status API
@@ -820,28 +675,27 @@ function Revoke-AzADVCCredential(
 .DESCRIPTION
     Gets a Credential Contract's manifest URL
 .PARAMETER IssuerId
-    Id of the issuer. If omitted, the first issuer will be used via the Get-AzADVCIssuers command
+    Id of the Authority. If omitted, the first authority will be used via the Get-EntraVerifiedIDAuthorities command
 .PARAMETER Name
-    Name or the Credential contract. If not specified, all Issuers will be returned
+    Name or the Credential contract. 
 .OUTPUTS
     Returns one or all Credential contract objects
 .EXAMPLE
-    Get-AzADVCContractManifestURL -Name "ContosoEmployee"
+    Get-EntraVerifiedIDContractManifestURL -Name "ContosoEmployee"
 .EXAMPLE
-    Get-AzADVCContractManifestURL -Name "ContosoEmployee" -IssuerId $issuer.id
+    Get-EntraVerifiedIDContractManifestURL -Name "ContosoEmployee" -AuthorityId $issuer.id
 #>
-function Get-AzADVCContractManifestURL([Parameter(Mandatory=$False)][string]$IssuerId,
-                                       [Parameter(Mandatory=$True)][string]$Name
-                                      )
-{
-    $contracts = Invoke-AdminAPIGet "contracts"
-    $contract = ($contracts | where {$_.contractName -eq $Name } )
+function Get-EntraVerifiedIDContractManifestURL( [Parameter(Mandatory=$False)][string]$AuthorityId,
+                                                 [Parameter(Mandatory=$True)][string]$Name
+                                               ) {
+    $contract = Get-EntraVerifiedIDContracts -AuthorityId $AuthorityId -Name $Name
     if ( !$contract ) {
         return $null
     }
-    $url = "https://beta.did.msidentity.com/v1.0/$($contract.tenantId)/verifiableCredential/contracts/$($contract.contractName)"
-    if ( $global:tenantRegionScope -eq "EU" ) {
-        $url = $url.Replace("https://beta.did", "https://beta.eu.did")
+    $url = $contract.manifestUrl
+    # temp bugfix
+    if ( !$url.StartsWith("https://verifiedid.did.msidentity.com/v1.0/tenants/")) {
+        $url = $url.Replace( "https://verifiedid.did.msidentity.com/", "https://verifiedid.did.msidentity.com/v1.0/tenants/")
     }
     return $url
 }
@@ -850,62 +704,51 @@ function Get-AzADVCContractManifestURL([Parameter(Mandatory=$False)][string]$Iss
     Gets a Credential Contract's manifest
 .DESCRIPTION
     Gets a Credential Contract's manifest either signed as a JWT token or unsigned json data
-.PARAMETER IssuerId
-    Id of the issuer. If omitted, the first issuer will be used via the Get-AzADVCIssuers command
+.PARAMETER AuthorityId
+    Id of the Authority. If omitted, the first authority will be used via the Get-EntraVerifiedIDAuthorities command
 .PARAMETER Name
-    Name or the Credential contract. If not specified, all Issuers will be returned
+    Name or the Credential contract.
 .PARAMETER Signed
     If to sign the manifest and return a JWT Token. This is what the Microsoft Authenticator does
     and it is also a test to see that your Azure KeyVault is set up correctly.
 .OUTPUTS
     Returns the manifest as an unsigned json data structure or a signed JWT token
 .EXAMPLE
-    Get-AzADVCContractManifest -Name "ContosoEmployee"
+    Get-EntraVerifiedIDContractManifest -Name "ContosoEmployee"
 .EXAMPLE
-    Get-AzADVCContractManifest -Name "ContosoEmployee" -IssuerId $issuer.id -Signed
+    Get-EntraVerifiedIDContractManifest -Name "ContosoEmployee" -AuthorityId $issuer.id -Signed
 #>
-function Get-AzADVCContractManifest([Parameter(Mandatory=$False)][string]$IssuerId,
-                                    [Parameter(Mandatory=$True)][string]$Name,
-                                    [Parameter(Mandatory=$false)][switch]$Signed = $False
-                                    )
-{
-    $contracts = Invoke-AdminAPIGet "contracts"
-    $contract = ($contracts | where {$_.contractName -eq $Name } )
-    if ( !$contract ) {
+function Get-EntraVerifiedIDContractManifest( [Parameter(Mandatory=$False)][string]$AuthorityId,
+                                              [Parameter(Mandatory=$True)][string]$Name,
+                                              [Parameter(Mandatory=$false)][switch]$Signed = $False
+                                            ) {
+    $url = Get-EntraVerifiedIDContractManifestURL -AuthorityId $AuthorityId -Name $Name
+    if ( !$url ) {
         return $null
     }
-    $url = "https://beta.did.msidentity.com/v1.0/$($contract.tenantId)/verifiableCredential/contracts/$($contract.contractName)"
-    if ( $global:tenantRegionScope -eq "EU" ) {
-        $url = $url.Replace("https://beta.did", "https://beta.eu.did")
-    }
     write-verbose "GET $url"
-    if ( $Signed ) {
-        return invoke-restmethod -Method "GET" -Uri $url -Headers @{ 'x-ms-sign-contract'='true'; }
-    } else {
-        return invoke-restmethod -Method "GET" -Uri $url
-    }
+    return invoke-restmethod -Method "GET" -Uri $url -Headers @{ "x-ms-sign-contract"="$($Signed.ToString().ToLower())"; }
 }
 ################################################################################################################################################
 # Discovery API
 ################################################################################################################################################
 <#
 .SYNOPSIS
-    Gets all or a named Issuer
+    Gets a DID Document for an Authority
 .DESCRIPTION
-    Gets all or a named Issuer from the Azure AD Verifiable Credentials configuration
+    Gets a DID Document for an Authority from the Entra Verified ID configuration
 .PARAMETER Name
-    Name or the Issuer. If not specified, all Issuers will be returned
+    Name or the Authority. If not specified, first authority will be used
 .OUTPUTS
-    Returns one or all Issuer objects
+    Returns DID Document for an Authority
 .EXAMPLE
-    Get-AzADVCDidExplorer
+    Get-EntraVerifiedIDDidExplorer
 .EXAMPLE
-    Get-AzADVCDidExplorer -Name "Contoso"
+    Get-EntraVerifiedIDDidExplorer -Name "Contoso"
 #>
-function Get-AzADVCDidExplorer( [Parameter(Mandatory=$False)][string]$Name, [Parameter(Mandatory=$False)][string]$did ) {
+function Get-EntraVerifiedIDDidExplorer( [Parameter(Mandatory=$False)][string]$Name, [Parameter(Mandatory=$False)][string]$did ) {
     if ( $Name ) {
-        $issuers = Invoke-AdminAPIGet "issuers" 
-        $issuer = ($issuers | where {$_.issuerName -eq $Name } )
+        $issuer = Get-EntraVerifiedIDAuthorities -Name $Name
         $did = $issuer.didModel.did
     }
     if ( $did ) {
@@ -927,12 +770,14 @@ function Get-AzADVCDidExplorer( [Parameter(Mandatory=$False)][string]$Name, [Par
 .OUTPUTS
     Returns one or all Issuer objects
 .EXAMPLE
-    Get-AzADVCDirectoryIssuers
+    Get-EntraVerifiedIDNetworkIssuers
 #>
-function Get-AzADVCDirectoryIssuers( [Parameter(Mandatory=$false)][string]$DomainSearch
-                                    , [Parameter(Mandatory=$False)][string]$TenantRegion ) {
+function Get-EntraVerifiedIDNetworkIssuers( [Parameter(Mandatory=$false)][string]$DomainSearch,
+                                            [Parameter(Mandatory=$False)][string]$TenantRegion 
+                                          ) {
     if ( !$DomainSearch ) { $DomainSearch = "%20" }
-    return Invoke-AdminAPIGet "/v1.0/vcDirectory/issuers?filter=linkeddomainurls like $DomainSearch" $TenantRegion
+    $resp = Invoke-AdminAPIGet "/v1.0/verifiableCredentialsNetwork/authorities?filter=linkeddomainurls like $DomainSearch" $TenantRegion
+    return $resp.value
 }
 <#
 .SYNOPSIS
@@ -942,16 +787,17 @@ function Get-AzADVCDirectoryIssuers( [Parameter(Mandatory=$false)][string]$Domai
 .PARAMETER TenantId
     Id of the tenant in the VC Directory. This is the normal Azure AD tenant id
 .PARAMETER IssuerId
-    Id of the Issuer in that tenant. You can retrieve this from Get-AzADVCDirectoryIssuers command
+    Id of the Issuer in that tenant. You can retrieve this from Get-EntraVerifiedIDDirectoryIssuers command
 .PARAMETER TenantRegion
     If you want to query a different region than your default region
 .OUTPUTS
     Returns one or all contracts objects
 .EXAMPLE
-    Get-AzADVCDirectoryIssuerContracts
+    Get-EntraVerifiedIDNetworkIssuerContracts
 #>
-function Get-AzADVCDirectoryIssuerContracts( [Parameter(Mandatory=$True)][string]$TenantId
-                                            , [Parameter(Mandatory=$True)][string]$IssuerId
+function Get-EntraVerifiedIDNetworkIssuerContracts( [Parameter(Mandatory=$True)][string]$TenantId
+                                            , [Parameter(Mandatory=$True)][string]$AuthorityId
                                             , [Parameter(Mandatory=$False)][string]$TenantRegion ) {
-    return Invoke-AdminAPIGet "/v1.0/vcDirectory/$TenantId/issuers/$IssuerId/contracts" $TenantRegion
+    $resp = Invoke-AdminAPIGet "/v1.0/tenants/$tenantId/verifiableCredentialsNetwork/authorities/$AuthorityId/contracts" $TenantRegion
+    return  $resp.value
 }

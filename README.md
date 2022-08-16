@@ -1,5 +1,5 @@
 # vc-scripts
-Github repo for sundry Azure AD Verifiable Credentials powershell scripts
+Github repo for sundry Microsoft Entra Verified ID powershell scripts
 
 ## Scripts
 
@@ -37,42 +37,40 @@ import-module .\VCAdminAPI.psm1
 The powershell module then contains the following commands
 
 *** Signin ***
-- Connect-AzADVCGraphDevicelogin
+- Connect-EntraVerifiedIDGraphDevicelogin
 
 *** Tenant ***
-- Enable-AzADVCTenant
-- Remove-AzADVCTenantOptOut
-- Get-AzADVCTenantStatus
+- Enable-EntraVerifiedIDTenant
+- Remove-EntraVerifiedIDTenantOptOut
 - Rotate-AzADVCIssuerSigningKey
 
-*** Issuers ***
-- Get-AzADVCIssuer
-- Get-AzADVCIssuers
-- New-AzADVCIssuer
-- Update-AzADVCIssuer
-- New-AzADVCWellKnownDidConfiguration
-- Get-AzADVCIssuerLinkedDomainDidConfiguration
-- Set-AzADVCLinkedDomains
-- Get-AzADVCDidDocument
-- Get-AzADVCDidExplorer
+*** Authorities ***
+- Get-EntraVerifiedIDAuthority
+- Get-EntraVerifiedIDAuthorities
+- New-EntraVerifiedIDAuthority
+- Update-EntraVerifiedIDAuthority
+- New-EntraVerifiedIDAuthorityWellKnownDidConfiguration
+- Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration
+- Set-EntraVerifiedIDAuthorityLinkedDomains
+- Rotate-EntraVerifiedIDAuthoritySigningKey
+- Get-EntraVerifiedIDDidDocument
+- Get-EntraVerifiedIDDidExplorer
 
 *** Credential Contracts ***
-- Get-AzADVCContracts
-- Get-AzADVCContract
-- New-AzADVCContract
-- Update-AzADVCContract
-- Get-AzADVCContractManifest
-- Get-AzADVCContractManifestURL
-- Get-AzADVCFileFromStorage
-- Import-AzADVCFileToStorage
+- Get-EntraVerifiedIDContracts
+- Get-EntraVerifiedIDContract
+- New-EntraVerifiedIDContract
+- Update-EntraVerifiedIDContract
+- Get-EntraVerifiedIDContractManifest
+- Get-EntraVerifiedIDContractManifestURL
 
 *** Credentials ***
-- Get-AzADVCCredential
-- Revoke-AzADVCCredential
+- Get-EntraVerifiedIDCredentials
+- Revoke-EntraVerifiedIDCredential
 
 *** VC Network ***
-- Get-AzADVCDirectoryIssuers
-- Get-AzADVCDirectoryIssuerContracts
+- Get-EntraVerifiedIDNetworkIssuers
+- Get-EntraVerifiedIDNetworkIssuerContracts
 
 ## Migrate Off Storage
 Old Credential Contracts uses Azure Storage to stor the display and rules json files while new contracts, created via the QuickStarts, store them internally together with the rest of the contract definition. In order to migrate a contract off storage, you need to update the contract definition. The steps to do that is to get the contract (using the Admin API), get the json files from storage, then change the json definition and finally updating the new contract definition (using the Admin API). The script [vc-migrate-off-storage.ps1](vc-migrate-off-storage.ps1) does this for all your contracts i  your tenant. 
@@ -146,17 +144,15 @@ During the genration, the manifest is downloaded and if you are using the id_tok
         "api-key": "blabla"
       }
     },
-    "issuance": {
-      "type": "VerifiedCredentialExpert",
-      "manifest": "https://beta.eu.did.msidentity.com/v1.0/...your-tenant-id.../verifiableCredential/contracts/VerifiedCredentialExpert",
-      "pin": {
-        "value": "1234",
-        "length": 4
-        },
-      "claims": {
-        "given_name": "PLACEHOLDER", 
-        "family_name": "PLACEHOLDER"
-      }
+    "type": "VerifiedCredentialExpert",
+    "manifest": "https://beta.eu.did.msidentity.com/v1.0/...your-tenant-id.../verifiableCredential/contracts/VerifiedCredentialExpert",
+    "pin": {
+      "value": "1234",
+      "length": 4
+      },
+    "claims": {
+      "given_name": "PLACEHOLDER", 
+      "family_name": "PLACEHOLDER"
     }
 }
 ```
