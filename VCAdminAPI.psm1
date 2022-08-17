@@ -168,7 +168,6 @@ function Invoke-RestMethodWithRefresh( [string]$httpMethod, [string]$path, [stri
     if ( $path.StartsWith("/") ) {
         $url="https://verifiedid.did.msidentity.com$path"
     } else {
-        #$url="https://verifiedid.did.msidentity.com/$($global:tenantID)/api/portable/v1.0/admin/$path"
         $url="https://verifiedid.did.msidentity.com/v1.0/verifiableCredentials/$path"
     }
     <#
@@ -219,9 +218,9 @@ function Invoke-AdminAPIUpdate( [string]$httpMethod, [string]$path, [string]$bod
 #-----------------------------------------------------------------------------------------------------------------------------------------------
 <#
 .SYNOPSIS
-    Onboards the Azure AD tenant to Verifiable Credentials
+    Onboards the Azure AD tenant to Entra Verified ID
 .DESCRIPTION
-    Onboards the Azure AD tenant to Verifiable Credentials
+    Onboards the Azure AD tenant to Entra Verified ID
 .EXAMPLE
     Enable-EntraVerifiedIDTenant
 #>
@@ -231,9 +230,9 @@ function Enable-EntraVerifiedIDTenant() {
 
 <#
 .SYNOPSIS
-    Opts-out Verifiable Credentials for the Azure AD tenant
+    Opts-out Entra Verified ID for the Azure AD tenant
 .DESCRIPTION
-    Opts-out Verifiable Credentials for the Azure AD tenant, destroying all authorities, cedential contracts and issued credentials
+    Opts-out Entra Verified ID for the Azure AD tenant, destroying all authorities, cedential contracts and issued credentials
 .PARAMETER Force
     If to not get the 'are you sure?' question
 .EXAMPLE
@@ -269,7 +268,8 @@ function Remove-EntraVerifiedIDTenantOptOut( [Parameter(Mandatory=$false)][switc
 #>
 function New-EntraVerifiedIDAuthority(  [Parameter(Mandatory=$True)][string]$Name, 
                                         [Parameter(Mandatory=$True)][string]$Domain, 
-                                        [Parameter(Mandatory=$True)][string]$KeyVaultResourceID 
+                                        [Parameter(Mandatory=$True)][string]$KeyVaultResourceID,
+                                        [Parameter(Mandatory=$false)][string]$DidMethod = "web"
                                     )
 {
     $kvparts=$KeyVaultResourceID.Split("/")
@@ -284,9 +284,9 @@ function New-EntraVerifiedIDAuthority(  [Parameter(Mandatory=$True)][string]$Nam
     # "didMethod" : "web",
     $body = @"
 {
-    "issuerName":"$nName",
+    "name":"$Name",
     "linkedDomainUrl":"$Domain",
-    "keyVaultUrl":"$kvUrl",
+    "didMethod": "$($didMethod.ToLower())",
     "keyVaultMetadata":
     {
         "subscriptionId":"$subscriptionId",
@@ -430,6 +430,18 @@ function Get-EntraVerifiedIDAuthority( [Parameter(Mandatory=$True)][string]$Id )
     $authorities = Invoke-AdminAPIGet "authorities/$id" 
     return $authorities
 }
+<#
+.SYNOPSIS
+    Gets a DID Document for an Authority by Id. Only supported by did:web
+.DESCRIPTION
+    Gets a DID Document for an Authority by Id. Only supported by did:web
+.PARAMETER Id
+    Id of the Authority
+.OUTPUTS
+    Returns the DID Document
+.EXAMPLE
+    Get-EntraVerifiedIDDidDocument -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
+#>
 function Get-EntraVerifiedIDDidDocument( [Parameter(Mandatory=$True)][string]$Id ) {
     return Invoke-AdminAPIUpdate "POST" "authorities/$id/generateDidDocument" 
 }
@@ -571,7 +583,6 @@ function New-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$Auth
     "rules": $Rules
 }
 "@
-
     if ( !$AuthorityId ) {
         $authorities = Get-EntraVerifiedIDAuthorities
         $AuthorityId = $authorities[0].id
@@ -752,7 +763,7 @@ function Get-EntraVerifiedIDDidExplorer( [Parameter(Mandatory=$False)][string]$N
         $did = $issuer.didModel.did
     }
     if ( $did ) {
-        $url = "https://beta.discover.did.microsoft.com/1.0/identifiers/$did"
+        $url = "https://discover.did.msidentity.com/v1.0/identifiers/$did"
         write-verbose "GET $url"
         return invoke-restmethod -Method "GET" -Uri $url
     }
