@@ -1,12 +1,34 @@
 <#
-This script migrates Credential Contracts off from Azure Storage to the new model.
-The actual update, at the end of this file, is commented out so you can make test runs.
-Uncomment that section when you are ready to migrate
+.SYNOPSIS
+    Migrates Entra Verified ID credential contracts off storage to new model
+.DESCRIPTION
+   This script migrates Credential Contracts off from Azure Storage to the new model.
+.PARAMETER TenantId
+    The Azure AD Tenant of your Entra Verified ID deployment
+.PARAMETER ClientId
+    The App Registration in your Azure AD Tenant with Admin API permissions
+.PARAMETER StorageAccessKey
+    The Azure Storage Account Access Key to the storage where your rules and display files are stored
+.PARAMETER ContractName
+    Name of the credential contract if you only want to process that contract
+.PARAMETER HaveAccessToken
+    If you have already run this script once recently and already have authenticated
+.PARAMETER Migrate
+    If you want to migrate the contract(s). Without this switch, the script just outputs what would be migrated
+.EXAMPLE
+    .\vc-migrate-off-storage.ps1 -TenantId $tenantId -ClientId $clientId -StorageAccessKey $StorageAccountKey
+.EXAMPLE
+    .\vc-migrate-off-storage.ps1 -TenantId $tenantId -ClientId $clientId -StorageAccessKey $StorageAccountKey -ContractName "VerifiedCredentialExpert" -HaveAccessToken
+.EXAMPLE
+    .\vc-migrate-off-storage.ps1 -TenantId $tenantId -ClientId $clientId -StorageAccessKey $StorageAccountKey -ContractName "VerifiedCredentialExpert" -HaveAccessToken -Migrate
 #>
 param (
     [Parameter(Mandatory=$true)][string]$TenantId,
     [Parameter(Mandatory=$True)][string]$ClientId,
-    [Parameter(Mandatory=$true)][string]$StorageAccessKey
+    [Parameter(Mandatory=$true)][string]$StorageAccessKey,
+    [Parameter(Mandatory=$false)][string]$ContractName,
+    [Parameter(Mandatory=$false)][switch]$Migrate = $false,
+    [Parameter(Mandatory=$false)][switch]$HaveAccessToken = $false
 )
 
 ##########################################################################################################
@@ -124,9 +146,12 @@ function MigrateClaimsMapping( $claimsMapping ) {
 # Main script
 ##########################################################################################################
 
-
-write-host "Signing in to Tenant $TenantId..."
-Connect-AzADVCTenantViaDeviceFlow -TenantId $tenantId -ClientId $clientId
+if ( $HaveAccessToken ) {
+    write-host "Reusing access_token..."
+} else {
+    write-host "Signing in to Tenant $TenantId..."
+    Connect-AzADVCTenantViaDeviceFlow -TenantId $tenantId -ClientId $clientId
+}
 
 write-host "Getting Tenant Region..."
 $tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
@@ -140,6 +165,9 @@ $contracts = Invoke-RestMethod -Method "GET" -Headers $global:authHeader -Uri "$
 
 # enumerate all contracts 
 foreach( $contract in $contracts ) {
+    if ( $ContractName.Length -gt 0 -and $ContractName.ToLower() -ne $contract.contractName.ToLower() ) {
+        continue # next foreach
+    }
     # only process old contracts that uses Azure Storage for display & rules files
     if ( !($contract.rulesFile -and $contract.displayFile) ) {
         PrintMsg "$($contract.contractName) - already good"
@@ -241,8 +269,8 @@ foreach( $contract in $contracts ) {
     "attestations": {
         $newRules
     },
-  "validityInterval": $($rules.validityInterval),
-  "vc": $($rules.vc | ConvertTo-json)
+    "validityInterval": $($rules.validityInterval),
+    "vc": $($rules.vc | ConvertTo-json)
   },
   $newDisplay
 }
@@ -250,11 +278,13 @@ foreach( $contract in $contracts ) {
     write-host "New Contract..."
     write-host ($newContract | ConvertFrom-json | ConvertTo-json -Depth 15 )
 
-# uncomment this to do the actual update    
-<# 
+# pass -Migrate switch to actually migrate the contract    
+<##>
+if ( $Migrate ) {
     write-host "Updating Contract..."
     $newContract = ($newContract | ConvertFrom-json | ConvertTo-json -Depth 15 -Compress)
     Invoke-RestMethod -Method "PUT" -Uri "$baseUrl/contracts/$($contract.Id)" -Headers $global:authHeader -Body $newContract -ContentType "application/json" -ErrorAction Stop
-#>
+}
+<##>
 
 } # foreach

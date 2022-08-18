@@ -79,8 +79,12 @@ This script is written to be executed standalone and you do not need VCAdminAPI.
 - **TenantId** - is the guid for your tenant
 - **ClientId** - An AppId that is registered with API Permission for app `Verifiable Credentials Service Admin` and permission `full_access`. 
 - **StorageAccessKey** - Azure Storage Access Key to your storage. This can be copied from portal.azure.com.
+- **ContractName** - (Optional) Name of the credential contract if you only want to process that contract
+- **HaveAccessToken** - (Optional) If you have already run this script once recently and already have authenticated
+- **Migrate** - (Optional) If you want to migrate the contract(s). Without this switch, the script just outputs what would be migrated
 
-Also, please not that the actual Update command is commented out so you can test run without making changes. If you are ready to migrate, uncomment the last part and run again.
+
+Also, please not that the the script only lists what would be migrated unless you pass the `-Migrate` switch. If you run the script multiple times, you can pass the `-HaveAccessToken` switch the subsequent times to reuse the access_token you acquired the first time during the interactive login.
 
 ```Powershell
 .\vc-migrate-off-storage.ps1 -TenantId $tenantId -ClientId $clientId -StorageAccessKey $StorageAccessKey
