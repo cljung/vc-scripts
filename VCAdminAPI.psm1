@@ -1,213 +1,77 @@
-$AdminAPIScriptVersion = "2022-08-16"
+$AdminAPIScriptVersion = "2022-09-23"
 <#
 This file contains a Powershell module for the EntraVerifiedID Admin API
 #>
 
 <#
 .SYNOPSIS
-    Interactive Login using Device Code Flow
+    Interactive Login 
 .DESCRIPTION
-    Interactive Login using Device Code Flow to get an access token that can be used for the VC Admin API
+    Interactive Login to get an access token that can be used for the VC Admin API
 .PARAMETER TenantId
     Your Azure AD tenant id (guid)
 .PARAMETER ClientId
     Your registered Azure AD AppID that has API Permissions to use the VC Admin API
 .PARAMETER Scope
-    The scope of the VC Admin API. "0135fd85-3010-4e73-a038-12560d2b58a9/full_access"
-.PARAMETER Edge
-    If to launch the device code flow in Microsoft Egde browser (only works on Windows)
-.PARAMETER Chrome
-    If to launch the device code flow in Google Chrome browser (Only works on Windows)
-.PARAMETER Firefox
-    If to launch the device code flow in Firefox browser (only works on Windows)
-.PARAMETER Incognito
-    If to launch the device code flow in an incognito/inprivate window (only works on Windows)
-.PARAMETER NewWindow
-    If to launch the device code flow in a new browser window (only works on Windows)
-.PARAMETER Timeout
-    How many seconds the powershell command should wait for sign in completion
+    The scope of the VC Admin API. "6a8b4b39-c021-437c-b060-5a14a3fd65f3/full_access"
 .OUTPUTS
-    On successful authentication, the command sets global variable $global:authHeader that can be used for authenticating REST API calls
-    $global:authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$retval.token_type + ' ' + $retval.access_token }
+    On successful authentication, the MSAL.PS token cache has an access token 
 .EXAMPLE
-    Connect-EntraVerifiedIDGraphDevicelogin -TenantId $TenantId -ClientID $clientId -Scope "0135fd85-3010-4e73-a038-12560d2b58a9/full_access"
-.EXAMPLE
-    Connect-EntraVerifiedIDGraphDevicelogin -TenantId $TenantId -ClientID $clientId -Scope "0135fd85-3010-4e73-a038-12560d2b58a9/full_access" -Edge -Incognito
+    Connect-EntraVerifiedID -TenantId $TenantId -ClientID $clientId -Scope "0135fd85-3010-4e73-a038-12560d2b58a9/full_access"
 #>
-function Connect-EntraVerifiedIDGraphDevicelogin {
+function Connect-EntraVerifiedID {
     [cmdletbinding()]
     param( 
         [Parameter(Mandatory=$True)][Alias('c')][string]$ClientId,
         [Parameter(Mandatory=$True)][Alias('t')][string]$TenantId,
-        [Parameter()][Alias('s')][string]$Scope = "6a8b4b39-c021-437c-b060-5a14a3fd65f3/full_access",                
-        [Parameter(DontShow)][int]$Timeout = 300, # Timeout in seconds to wait for user to complete sign in process
-        # depending on in which browser you may already have a login session started, these switches might come in handy
-        [Parameter(Mandatory=$false)][switch]$Chrome = $False,
-        [Parameter(Mandatory=$false)][switch]$Edge = $False,
-        [Parameter(Mandatory=$false)][switch]$Firefox = $False,
-        [Parameter(Mandatory=$false)][switch]$Incognito = $True,
-        [Parameter(Mandatory=$false)][switch]$NewWindow = $True
+        [Parameter()][Alias('s')][string]$Scope = "6a8b4b39-c021-437c-b060-5a14a3fd65f3/full_access"
 )
 
-Function IIf($If, $Right, $Wrong) {If ($If) {$Right} Else {$Wrong}}
-
-if ( !($Scope -imatch "offline_access") ) { $Scope += " offline_access"} # make sure we get a refresh token
-$retVal = $null
-$url = "https://microsoft.com/devicelogin"
-$isMacOS = ($env:PATH -imatch "/usr/bin" )
-$pgm = "chrome.exe"
-$params = "--incognito --new-window"
-if ( !$IsMacOS ) {
-    $Browser = ""
-    if ( $Chrome ) { $Browser = "Chrome" }
-    if ( $Edge ) { $Browser = "Edge" }
-    if ( $Firefox ) { $Browser = "Firefox" }
-    if ( $browser -eq "") {
-        $browser = (Get-ItemProperty HKCU:\Software\Microsoft\windows\Shell\Associations\UrlAssociations\http\UserChoice).ProgId
-    }
-    $browser = $browser.Replace("HTML", "").Replace("URL", "")
-    switch( $browser.ToLower() ) {        
-        "firefox" { 
-            $pgm = "$env:ProgramFiles\Mozilla Firefox\firefox.exe"
-            $params = (&{If($Incognito) {"-private "} Else {""}}) + (&{If($NewWindow) {"-new-window"} Else {""}})
-        } 
-        "chrome" { 
-            $pgm = "$env:ProgramFiles (x86)\Google\Chrome\Application\chrome.exe"
-            $params = (&{If($Incognito) {"--incognito "} Else {""}}) + (&{If($NewWindow) {"--new-window"} Else {""}})
-        } 
-        default { 
-            $pgm = "$env:ProgramFiles (x86)\Microsoft\Edge\Application\msedge.exe"
-            $params = (&{If($Incognito) {"-InPrivate "} Else {""}}) + (&{If($NewWindow) {"-new-window"} Else {""}})
-        } 
-    }  
-}
-
-try {
-    $DeviceCodeRequest = Invoke-RestMethod -Method "POST" -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/devicecode" `
-                                            -Body @{ client_id=$ClientId; scope=$scope; } -ContentType "application/x-www-form-urlencoded"
-                                            # for endpoint != v2.0
-                                            #-Body @{ client_id=$ClientId; resource="0135fd85-3010-4e73-a038-12560d2b58a9"; scope="full_access"; } -ContentType "application/x-www-form-urlencoded"
-    #write-host $DeviceCodeRequest
-    Write-Host $DeviceCodeRequest.message -ForegroundColor Yellow
-    $url = $DeviceCodeRequest.verification_uri # url for endpoint != v2.0
-
-    Set-Clipboard -Value $DeviceCodeRequest.user_code
-
-    if ( $isMacOS ) {
-        $ret = [System.Diagnostics.Process]::Start("/usr/bin/open","$url")
-    } else {
-        $ret = [System.Diagnostics.Process]::Start($pgm,"$params $url")
-    }
-
-    $TimeoutTimer = [System.Diagnostics.Stopwatch]::StartNew()
-    while ([string]::IsNullOrEmpty($TokenRequest.access_token)) {
-        if ($TimeoutTimer.Elapsed.TotalSeconds -gt $Timeout) {
-            throw 'Login timed out, please try again.'
-        }
-        $TokenRequest = try {
-            Invoke-RestMethod -Method "POST" -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" `
-                                -Body @{ grant_type="urn:ietf:params:oauth:grant-type:device_code"; code=$DeviceCodeRequest.device_code; client_id=$ClientId} `
-                                -ErrorAction Stop
-        }
-        catch {
-            $Message = $_.ErrorDetails.Message | ConvertFrom-Json
-            if ($Message.error -ne "authorization_pending") {
-                throw
-            }
-        }
-        Start-Sleep -Seconds 1
-    }
-    $retVal = $TokenRequest
-}
-finally {
-    try {
-        $TimeoutTimer.Stop()
-    }
-    catch {
-        # We don't care about errors here
-    }
-}
+$msalParams = @{ ClientId = $clientId; TenantId = $tenantId; Scopes = $Scope }
+$msalResp = Get-MsalToken @msalParams
 
 $tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
 $global:tenantRegionScope = $tenantMetadata.tenant_region_scope # WW, NA, EU, AF, AS, OC, SA
-
 $global:tenantId = $tenantId
-$global:tokens = $retval
-$global:authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$retval.token_type + ' ' + $retval.access_token }
+$global:clientId = $clientId
+$global:scope = $scope
 }
 
-<#
-.SYNOPSIS
-    Refreshes the access token when needed.
-.DESCRIPTION
-    Refreshes the access token when needed. This function is called internally
-.OUTPUTS
-    Updates the global variables $global:tokens and $global:authHeader
-.EXAMPLE
-    Refresh-EntraVerifiedIDAccessToken
-#>
-
-function Refresh-EntraVerifiedIDAccessToken {
-    $token = $global:tokens.access_token.Split(".")[1]
-    if ( ($token.Length % 4) -gt 0 ) {
-        $token = $token + "".PadRight( 4-($token.Length % 4), "=")
-    }
-    $tokenClaims = ([System.Text.Encoding]::ASCII.GetString( [System.Convert]::FromBase64String($token) ) | ConvertFrom-json)
-    $exp = (get-date "1/1/1970").AddSeconds($tokenClaims.exp).ToLocalTime()    
-    if ( ((get-date) -gt $exp) -and $global:tokens.refresh_token) {        
-        $retval = Invoke-RestMethod -Method POST -Uri "https://login.microsoftonline.com/$($tokenClaims.tid)/oauth2/v2.0/token" `
-                                -Body @{ grant_type="refresh_token"; client_id="$($tokenClaims.appid)"; refresh_token=$global:tokens.refresh_token; }
-        $global:tokens = $retval
-        $global:authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$retval.token_type + ' ' + $retval.access_token }
-    }
-}
 ################################################################################################################################################
 # Helper functions
 ################################################################################################################################################
-function Invoke-RestMethodWithRefresh( [string]$httpMethod, [string]$path, [string]$body, [string]$TenantRegion ) {
+function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]$body, [string]$TenantRegion ) {
     if ( $path.StartsWith("/") ) {
         $url="https://verifiedid.did.msidentity.com$path"
     } else {
         $url="https://verifiedid.did.msidentity.com/v1.0/verifiableCredentials/$path"
     }
-    <#
-    if ( !$TenantRegion ) { $TenantRegion = $global:tenantRegionScope }
-    if ( $TenantRegion -eq "EU" ) {
-        $url = $url.Replace("https://beta.did", "https://beta.eu.did")
-    }
-    #>
     write-verbose "$httpMethod $url"
-    $needRefresh = $False
-    do {
-        $needRefresh = $False
-        try {
-            if ( $httpMethod -eq "GET" ) {
-                $resp = Invoke-RestMethod -Method "GET" -Headers $global:authHeader -Uri $url -ErrorAction Stop
-            } else {
-                $resp = Invoke-RestMethod -Method $httpMethod -Uri $url -Headers $global:authHeader -Body $body -ContentType "application/json" -ErrorAction Stop
-            }
-        } catch {
-            $streamReader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
-            $streamReader.BaseStream.Position = 0
-            $streamReader.DiscardBufferedData()
-            $errResp = $streamReader.ReadToEnd()
-            $streamReader.Close()    
-            $needRefresh = $errResp -imatch "token_validation.expired"
-            if ( $needRefresh ) {
-                Refresh-EntraVerifiedIDAccessToken
-            } else {
-                write-host $errResp -ForegroundColor "Red" -BackgroundColor "Black"
-            }
+    $msalParams = @{ ClientId = $global:clientId; TenantId = $global:tenantId; Scopes = $global:scope }
+    $msalResp = Get-MsalToken @msalParams
+    $authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$msalResp.TokenType + ' ' + $msalResp.AccessToken }
+    try {
+        if ( $httpMethod -eq "GET" ) {
+            $resp = Invoke-RestMethod -Method "GET" -Headers $authHeader -Uri $url -ErrorAction Stop
+        } else {
+            $resp = Invoke-RestMethod -Method $httpMethod -Uri $url -Headers $authHeader -Body $body -ContentType "application/json" -ErrorAction Stop
         }
-    } while ($needRefresh)
+    } catch {
+        $streamReader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
+        $streamReader.BaseStream.Position = 0
+        $streamReader.DiscardBufferedData()
+        $errResp = $streamReader.ReadToEnd()
+        $streamReader.Close()    
+        write-host $errResp -ForegroundColor "Red" -BackgroundColor "Black"
+    }
     return $resp    
 }
 function Invoke-AdminAPIGet( [string]$path, [string]$TenantRegion ) {
-    return Invoke-RestMethodWithRefresh "GET" $path $null $TenantRegion
+    return Invoke-RestMethodWithMsal "GET" $path $null $TenantRegion
 }
 
 function Invoke-AdminAPIUpdate( [string]$httpMethod, [string]$path, [string]$body, [string]$TenantRegion ) {
-    return Invoke-RestMethodWithRefresh $httpMethod $path $body $TenantRegion
+    return Invoke-RestMethodWithMsal $httpMethod $path $body $TenantRegion
 }
 
 ################################################################################################################################################

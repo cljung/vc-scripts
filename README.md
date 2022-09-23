@@ -5,7 +5,7 @@ Github repo for sundry Microsoft Entra Verified ID powershell scripts
 
 | Sample | Description |
 |------|--------|
-| tenat-config.ps1 | Your tenant configuration variables |
+| tenant-config.ps1 | Your tenant configuration variables |
 | VCAdminAPI.psm1 | Admin API powershell module |
 | vc-admin-loging.ps1 | shortcut to login in to your tenant |
 | vc-aadfree-migration.ps1 | Script to migrate an Azure AD tenant to the new 1st party AppIDs |
@@ -13,11 +13,18 @@ Github repo for sundry Microsoft Entra Verified ID powershell scripts
 | vc-post-request.ps1 | Script to create an issuance or presentation request |
 | vc-generate-payloads.ps1 | Script to generate a request Service API payload based on Issuer/Contract |
 
+## MSAL.PS
+You need to install **MSAL.PS** in order for this powershell module to work. Authentication and acquiring of access tokens are handled by MSAL.PS.
+
+```powershell
+Install-Module -Name MSAL.PS
+```
+ 
 ## App Registration
-You need to create a new App Registration in your tenant and grant that application the `API Permission` to `Verifiable Credential Service Admin` with permission `full_access`. The app needs `Allow public client flows` enabled under `Authentication`.
+You need to create a new App Registration in your tenant and grant that application the `API Permission` to `Verifiable Credential Service Admin` with permission `full_access`. Under `Authentication` the app needs `Allow public client flows` enabled and you also need to check `https://login.microsoftonline.com/common/oauth2/nativeclient` before you save.
 
 ## Usage
-You need to edit the file [tenat-config.ps1](tenat-config.ps1) and set the id's of your tenant, subscription, etc. The $clientId is the AppId of the app you registered above.
+You need to edit the file [tenant-config.ps1](tenat-config.ps1) and set the id's of your tenant, subscription, etc. The $clientId is the AppId of the app you registered above.
 
 ```powershell
 $SubscriptionId = "<azure-subscription-guid>"
@@ -37,12 +44,11 @@ import-module .\VCAdminAPI.psm1
 The powershell module then contains the following commands
 
 *** Signin ***
-- Connect-EntraVerifiedIDGraphDevicelogin
+- Connect-EntraVerifiedID
 
 *** Tenant ***
 - Enable-EntraVerifiedIDTenant
 - Remove-EntraVerifiedIDTenantOptOut
-- Rotate-AzADVCIssuerSigningKey
 
 *** Authorities ***
 - Get-EntraVerifiedIDAuthority
@@ -72,26 +78,6 @@ The powershell module then contains the following commands
 - Get-EntraVerifiedIDNetworkIssuers
 - Get-EntraVerifiedIDNetworkIssuerContracts
 
-## Migrate Off Storage
-Old Credential Contracts uses Azure Storage to stor the display and rules json files while new contracts, created via the QuickStarts, store them internally together with the rest of the contract definition. In order to migrate a contract off storage, you need to update the contract definition. The steps to do that is to get the contract (using the Admin API), get the json files from storage, then change the json definition and finally updating the new contract definition (using the Admin API). The script [vc-migrate-off-storage.ps1](vc-migrate-off-storage.ps1) does this for all your contracts i  your tenant. 
-
-This script is written to be executed standalone and you do not need VCAdminAPI.psm1. The script takes three parameters, which are: 
-- **TenantId** - is the guid for your tenant
-- **ClientId** - An AppId that is registered with API Permission for app `Verifiable Credentials Service Admin` and permission `full_access`. 
-- **StorageAccessKey** - Azure Storage Access Key to your storage. This can be copied from portal.azure.com.
-- **ContractName** - (Optional) Name of the credential contract if you only want to process that contract
-- **HaveAccessToken** - (Optional) If you have already run this script once recently and already have authenticated
-- **Migrate** - (Optional) If you want to migrate the contract(s). Without this switch, the script just outputs what would be migrated
-
-
-Also, please not that the the script only lists what would be migrated unless you pass the `-Migrate` switch. If you run the script multiple times, you can pass the `-HaveAccessToken` switch the subsequent times to reuse the access_token you acquired the first time during the interactive login.
-
-```Powershell
-.\vc-migrate-off-storage.ps1 -TenantId $tenantId -ClientId $clientId -StorageAccessKey $StorageAccessKey
-```
-
-The script will start with authenticating via the device code flow where you have to paste in the device code (the script puts it on the clipboard for convenience, so you only have to do Ctrl+V) and then enter your credentials for the tenant. It will ask for an access token with scope to use the app `Verifiable Credentials Service Admin` and permission `full_access`, so the clientId you pass must be registered with that.
-
 ## Test VC Issuance and Presentation using Powershell
 You can test issuance and presentation using just powershell. The two scripts `vc-mini-webserver.ps1` and `vc-post-request.ps1` helps your with that. 
 
@@ -114,24 +100,24 @@ If you want to generate JSON payloads for the Request Service APIs that work wit
 ```powershell
 .\vc-generate-payloads-settings.ps1 -ContractName "VerifiedCredentialExpert" -Node -ClientId $AppId -ClientSecret $AppKey
 
-Generating file .\issuance_request_payload.VerifiedCredentialExpert.<tenantId>.json
-Generating file .\presentation_payload.VerifiedCredentialExpert.<tenantId>.json
-Generating file .\config.VerifiedCredentialExpert.<tenantId>.json
-Generating file .\run.VerifiedCredentialExpert.<tenantId>.cmd
-Generating file .\run.VerifiedCredentialExpert.<tenantId>.sh
-Generating file .\docker-run.VerifiedCredentialExpert.<tenantId>.cmd
-Generating file .\docker-run.VerifiedCredentialExpert.<tenantId>.sh
+Generating file .\issuance_request_payload.<tenantId>.VerifiedCredentialExpert.json
+Generating file .\presentation_payload.<tenantId>.VerifiedCredentialExpert.json
+Generating file .\config.<tenantId>.VerifiedCredentialExpert.json
+Generating file .\run.<tenantId>.VerifiedCredentialExpert.cmd
+Generating file .\run.<tenantId>.VerifiedCredentialExpert.sh
+Generating file .\docker-run.<tenantId>.VerifiedCredentialExpert.cmd
+Generating file .\docker-run.<tenantId>.VerifiedCredentialExpert.sh
 ```
 
 The generated files will have the the credential contract name as part of the file name so you can have files for multiple contracts on your dev machine. The config*.json and appsettings*.json files will just be updated if they already exists, and updates you have made in between runs will be preserved.
 
-Unless you want to use a client certificate instead of a client secret, you are good to go. For example, the `run.VerifiedCredentialExpert.<tenantId>.cmd` will look like this:
+Unless you want to use a client certificate instead of a client secret, you are good to go. For example, the `run.<tenantId>.VerifiedCredentialExpert.cmd` will look like this:
 
 ```cmd
-node app.js .\config.VerifiedCredentialExpert.<tenantId>.json .\issuance_request_payload.VerifiedCredentialExpert.<tenantId>.json .\presentation_payload.VerifiedCredentialExpert.<tenantId>.json
+node app.js .\config.<tenantId>.VerifiedCredentialExpert.json .\issuance_request_payload.<tenantId>.VerifiedCredentialExpert.json .\presentation_payload.<tenantId>.VerifiedCredentialExpert.json
 ```
 
-During the genration, the manifest is downloaded and if you are using the id_token_hint flow, the claims defined in the rules section will be part of the generated `issuance_request_payload.VerifiedCredentialExpert.<tenantId>.json` file. 
+During the genration, the manifest is downloaded and if you are using the id_token_hint flow, the claims defined in the rules section will be part of the generated `issuance_request_payload.<tenantId>.VerifiedCredentialExpert.json` file. 
 
 ```json
 {
@@ -160,6 +146,9 @@ During the genration, the manifest is downloaded and if you are using the id_tok
     }
 }
 ```
+
+## Migrate Off Storage
+Please refer to [this](https://github.com/Azure-Samples/active-directory-verifiable-credentials/tree/main/scripts/contractmigration) script for migrating off storage.
 
 ## New 1st party apps AppID migration
 With the support for Azure AD Free for Verifiable Credentials, new AppIDs were introduced. Azure AD tenants that were used for POC/Pilots before this happened need to migrate their configuration. The script `vc-aadfree-migration.ps1` script will help you do that.

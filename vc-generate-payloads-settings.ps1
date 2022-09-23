@@ -31,7 +31,7 @@ if ( !($Path.EndsWith("/") -or $Path.EndsWith("\")) ) {
 }
 
 # generated files have .tenantId.contractName. as part of their name to make them unique
-$filePattern = "$($contract.name).$tenantId"
+$filePattern = "$tenantId.$($contract.name)"
 function SaveToFile( [string]$Filename, [string]$Value) {
   $TargetPath = "$Path$Filename"
   if ( $OutputToConsole ) {

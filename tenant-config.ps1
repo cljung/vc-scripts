@@ -10,8 +10,5 @@ $clientId="<AppId of the app that has AdminAPI permission>" # App that has API P
 
 # The below settings are ONLY needed if you plan to Onboard a tenant via powershell
 $SubscriptionId = "<azure-subscription-guid>"
-$Location = "West Europe"
 $resourceGroupName = "<resource-group-name>"
 $keyVaultName = "<your-keyvault>"
-$storageAccountName = "<your-storageaccountname>"
-$ContainerPath = "<your-storagecontainername>"
