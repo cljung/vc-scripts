@@ -41,7 +41,9 @@ $global:scope = $scope
 # Helper functions
 ################################################################################################################################################
 function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]$body, [string]$TenantRegion ) {
-    if ( !$path.StartsWith("https://")) {
+    if ( $path.StartsWith("https://")) {
+        $url = $path
+    } else {
         if ( $path.StartsWith("/") ) {
             $url="https://verifiedid.did.msidentity.com$path"
         } else {
