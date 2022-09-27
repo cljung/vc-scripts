@@ -27,6 +27,7 @@ You need to create a new App Registration in your tenant and grant that applicat
 You need to edit the file [tenant-config.ps1](tenat-config.ps1) and set the id's of your tenant, subscription, etc. The $clientId is the AppId of the app you registered above.
 
 ```powershell
+$tenantId = "<aad-tenantid-guid>"
 $SubscriptionId = "<azure-subscription-guid>"
 $resourceGroupName = "<resource-group-name>"
 $keyVaultName = "<your-keyvault>"
@@ -52,18 +53,16 @@ The powershell module then contains the following commands
 
 *** Authorities ***
 - Get-EntraVerifiedIDAuthority
-- Get-EntraVerifiedIDAuthorities
 - New-EntraVerifiedIDAuthority
 - Update-EntraVerifiedIDAuthority
-- New-EntraVerifiedIDAuthorityWellKnownDidConfiguration
 - Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration
-- Set-EntraVerifiedIDAuthorityLinkedDomains
+- New-EntraVerifiedIDAuthorityWellKnownDidConfiguration
+s- Set-EntraVerifiedIDAuthorityLinkedDomains
 - Rotate-EntraVerifiedIDAuthoritySigningKey
 - Get-EntraVerifiedIDDidDocument
 - Get-EntraVerifiedIDDidExplorer
 
 *** Credential Contracts ***
-- Get-EntraVerifiedIDContracts
 - Get-EntraVerifiedIDContract
 - New-EntraVerifiedIDContract
 - Update-EntraVerifiedIDContract

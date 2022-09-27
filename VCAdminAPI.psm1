@@ -1,11 +1,11 @@
-$AdminAPIScriptVersion = "2022-09-23"
+$AdminAPIScriptVersion = "2022-09-27"
 <#
 This file contains a Powershell module for the EntraVerifiedID Admin API
 #>
 
 <#
 .SYNOPSIS
-    Interactive Login 
+    Interactive Login to VC Admin API
 .DESCRIPTION
     Interactive Login to get an access token that can be used for the VC Admin API
 .PARAMETER TenantId
@@ -17,7 +17,7 @@ This file contains a Powershell module for the EntraVerifiedID Admin API
 .OUTPUTS
     On successful authentication, the MSAL.PS token cache has an access token 
 .EXAMPLE
-    Connect-EntraVerifiedID -TenantId $TenantId -ClientID $clientId -Scope "0135fd85-3010-4e73-a038-12560d2b58a9/full_access"
+    Connect-EntraVerifiedID -TenantId $TenantId -ClientID $clientId
 #>
 function Connect-EntraVerifiedID {
     [cmdletbinding()]
@@ -41,10 +41,12 @@ $global:scope = $scope
 # Helper functions
 ################################################################################################################################################
 function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]$body, [string]$TenantRegion ) {
-    if ( $path.StartsWith("/") ) {
-        $url="https://verifiedid.did.msidentity.com$path"
-    } else {
-        $url="https://verifiedid.did.msidentity.com/v1.0/verifiableCredentials/$path"
+    if ( !$path.StartsWith("https://")) {
+        if ( $path.StartsWith("/") ) {
+            $url="https://verifiedid.did.msidentity.com$path"
+        } else {
+            $url="https://verifiedid.did.msidentity.com/v1.0/verifiableCredentials/$path"
+        }
     }
     write-verbose "$httpMethod $url"
     $msalParams = @{ ClientId = $global:clientId; TenantId = $global:tenantId; Scopes = $global:scope }
@@ -205,7 +207,7 @@ function Rotate-EntraVerifiedIDAuthoritySigningKey( [Parameter(Mandatory=$True)]
 .DESCRIPTION
     Update the domain name(s) that is the verified domain for the Issuer instance. The domain names where originally set in the New-EntraVerifiedIDIssuer command
 .PARAMETER IssuerId
-    Id of the issuer. If omitted, the first issuer will be used via the Get-EntraVerifiedIDAuthorities command
+    Id of the issuer. If omitted, the first issuer will be used via the Get-EntraVerifiedIDAuthority command
 .PARAMETER Domains
     String array of domains, like https://contoso.com/, https://vc.fabrikam.com/ or https://did.woodgrove.com/
 .EXAMPLE
@@ -217,7 +219,7 @@ function Set-EntraVerifiedIDAuthorityLinkedDomains( [Parameter(Mandatory=$False)
                                                     [Parameter(Mandatory=$True)][string[]]$Domains
                                                   ) {
     if ( !$Id ) {
-        $authorities = Get-EntraVerifiedIDAuthorities
+        $authorities = Get-EntraVerifiedIDAuthority
         $Id = $authorities[0].id
     }    
     $body = @"
@@ -233,7 +235,7 @@ function Set-EntraVerifiedIDAuthorityLinkedDomains( [Parameter(Mandatory=$False)
 .DESCRIPTION
     Update the domain name(s) that is the verified domain for the Authority instance. The domain names where originally set in the New-EntraVerifiedIDAuthority command
 .PARAMETER IssuerId
-    Id of the Authority. If omitted, the first authority will be used via the Get-EntraVerifiedIDAuthorities command
+    Id of the Authority. If omitted, the first authority will be used via the Get-EntraVerifiedIDAuthority command
 .PARAMETER Domain
     Domain, like https://contoso.com/, https://vc.fabrikam.com/ or https://did.woodgrove.com/
 .OUTPUTS
@@ -247,7 +249,7 @@ function New-EntraVerifiedIDAuthorityWellKnownDidConfiguration( [Parameter(Manda
                                                                 [Parameter(Mandatory=$True)][string]$Domain 
                                                               ) {
     if ( !$Id ) {
-        $authorities = Get-EntraVerifiedIDAuthorities
+        $authorities = Get-EntraVerifiedIDAuthority
         $Id = $authorities[0].id
     }    
     $body = @"
@@ -259,27 +261,6 @@ function New-EntraVerifiedIDAuthorityWellKnownDidConfiguration( [Parameter(Manda
 }
 <#
 .SYNOPSIS
-    Gets all or a named Authorities
-.DESCRIPTION
-    Gets all or a named Authorities from the Entra Verified ID configuration
-.PARAMETER Name
-    Name or the Authority. If not specified, all Authorities will be returned
-.OUTPUTS
-    Returns one or all Authorities objects
-.EXAMPLE
-    Get-EntraVerifiedIDAuthorities
-.EXAMPLE
-    Get-EntraVerifiedIDAuthorities -Name "Contoso"
-#>
-function Get-EntraVerifiedIDAuthorities( [Parameter(Mandatory=$False)][string]$Name ) {
-    $authorities = Invoke-AdminAPIGet "authorities" 
-    if ( !$Name ) {
-        return $authorities.value
-    }
-    return ($issuers.value | where {$_.name -eq $Name } )
-}
-<#
-.SYNOPSIS
     Gets Authorities by Id
 .DESCRIPTION
     Gets Authorities by Id
@@ -288,11 +269,22 @@ function Get-EntraVerifiedIDAuthorities( [Parameter(Mandatory=$False)][string]$N
 .OUTPUTS
     Returns the Authority object
 .EXAMPLE
-    Get-EntraVerifiedIDAuthorities -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
+    Get-EntraVerifiedIDAuthority
+.EXAMPLE
+    Get-EntraVerifiedIDAuthority -Name "Contoso"
+.EXAMPLE
+    Get-EntraVerifiedIDAuthority -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
 #>
-function Get-EntraVerifiedIDAuthority( [Parameter(Mandatory=$True)][string]$Id ) {
-    $authorities = Invoke-AdminAPIGet "authorities/$id" 
-    return $authorities
+function Get-EntraVerifiedIDAuthority( [Parameter(Mandatory=$False)][string]$Id, [Parameter(Mandatory=$False)][string]$Name ) {
+    if ( $Id ) {
+        $authorities = Invoke-AdminAPIGet "authorities/$id" 
+        return $authorities
+    }
+    $authorities = Invoke-AdminAPIGet "authorities" 
+    if ( !$Name ) {
+        return $authorities.value
+    }
+    return ($authorities.value | where {$_.name -eq $Name } )
 }
 <#
 .SYNOPSIS
@@ -317,7 +309,7 @@ function Get-EntraVerifiedIDDidDocument( [Parameter(Mandatory=$True)][string]$Id
     Get Linked Domains did-configuration json metadata for an Authority.
     If -Raw switch is not passed, the decoded values to pay attention to are:
     - type == DomainLinkageCredential
-    - credentialSubject.id == did for the Authority. Matches (Get-EntraVerifiedIDAuthorities -Name "Contoso").didModel.did
+    - credentialSubject.id == did for the Authority. Matches (Get-EntraVerifiedIDAuthority -Name "Contoso").didModel.did
     - credentialSubject.origin == matches the linked domain name
 .PARAMETER Name
     Name or the Authority. If not specified, all Authority will be returned
@@ -332,7 +324,7 @@ function Get-EntraVerifiedIDDidDocument( [Parameter(Mandatory=$True)][string]$Id
 #>
 function Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration( [Parameter(Mandatory=$True)][string]$Name,
                                                                    [Parameter(Mandatory=$false)][switch]$Raw = $False ) {
-    $authorities = Get-EntraVerifiedIDAuthorities -Name $Name
+    $authorities = Get-EntraVerifiedIDAuthority -Name $Name
     $didcfgs = @()
     foreach( $domain in $authorities.didModel.linkedDomainUrls ) {
         $url = "$domain.well-known/did-configuration.json"
@@ -358,31 +350,6 @@ function Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration( [Parameter(Ma
 #-----------------------------------------------------------------------------------------------------------------------------------------------
 <#
 .SYNOPSIS
-    Gets all or a named Credential contract
-.DESCRIPTION
-    Gets all or a named Credential contract from the Entra Verified ID configuration
-.PARAMETER AuthorityId
-    Id of the Authority. 
-.PARAMETER Name
-    Name or the Credential contract. If not specified, all contracts will be returned
-.OUTPUTS
-    Returns one or all Credential contract objects
-.EXAMPLE
-    Get-EntraVerifiedIDContracts
-.EXAMPLE
-    Get-EntraVerifiedIDContracts -Name "ContosoEmployee"
-#>
-function Get-EntraVerifiedIDContracts( [Parameter(Mandatory=$True)][string]$AuthorityId,
-                                       [Parameter(Mandatory=$False)][string]$Name
-                                     ) {
-    $contracts = Invoke-AdminAPIGet "authorities/$AuthorityId/contracts"
-    if ( $Name.Length -gt 0 ) {
-        return ($contracts.value | where {$_.name -eq $Name } )
-    }
-    return $contracts.value    
-}
-<#
-.SYNOPSIS
     Gets a Credential contract by id
 .DESCRIPTION
     Gets a Credential contract by id
@@ -391,12 +358,24 @@ function Get-EntraVerifiedIDContracts( [Parameter(Mandatory=$True)][string]$Auth
 .OUTPUTS
     Returns the contract objects
 .EXAMPLE
-    Get-EntraVerifiedIDContract -Id "OTg4NTQ1N2EtMjAy...lhbHRlc3Qx"
+    Get-EntraVerifiedIDContract -AuthorityId <guid>
+.EXAMPLE
+    Get-EntraVerifiedIDContract -AuthorityId <guid> -Id "OTg4NTQ1N2EtMjAy...lhbHRlc3Qx"
+.EXAMPLE
+    Get-EntraVerifiedIDContract -AuthorityId <guid> -Name "VerifiedCredentialExpert"
 #>
-function Get-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$AuthorityId,
-                                      [Parameter(Mandatory=$True)][string]$Id
+function Get-EntraVerifiedIDContract( [Parameter(Mandatory=$True)][string]$AuthorityId,
+                                      [Parameter(Mandatory=$False)][string]$Id,
+                                      [Parameter(Mandatory=$False)][string]$Name
                                     ) {
-    return Invoke-AdminAPIGet "authorities/$AuthorityId/contracts/$Id"
+    if ( $Id ) {
+        return Invoke-AdminAPIGet "authorities/$AuthorityId/contracts/$Id"
+    }                                        
+    $contracts = Invoke-AdminAPIGet "authorities/$AuthorityId/contracts"
+    if ( $Name ) {
+        return ($contracts.value | where {$_.name -eq $Name } )
+    }
+    return $contracts.value    
 }
 <#
 .SYNOPSIS
@@ -448,7 +427,7 @@ function New-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$Auth
 }
 "@
     if ( !$AuthorityId ) {
-        $authorities = Get-EntraVerifiedIDAuthorities
+        $authorities = Get-EntraVerifiedIDAuthority
         $AuthorityId = $authorities[0].id
     }        
     return Invoke-AdminAPIUpdate "POST" "authorities/$AuthorityId/contracts" $body 
@@ -484,7 +463,7 @@ function Update-EntraVerifiedIDContract( [Parameter(Mandatory=$True)][string]$Au
 .DESCRIPTION
     Searches for issued credentials based on indexed claim value
 .PARAMETER ContractId
-    Id of the Credential contract. Can be retrieved by the Get-EntraVerifiedIDContracts command
+    Id of the Credential contract. Can be retrieved by the Get-EntraVerifiedIDContract command
 .PARAMETER ClaimValue
     Value of the indexed claim
 .OUTPUTS
@@ -496,10 +475,14 @@ function Get-EntraVerifiedIDCredentials( [Parameter(Mandatory=$true)][string]$Au
                                          [Parameter(Mandatory=$true)][string]$ContractId,    
                                          [Parameter(Mandatory=$true)][string]$ClaimValue
                                        ) {
-    $hasher = [System.Security.Cryptography.HashAlgorithm]::Create('sha256')
-    $hash = $hasher.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($ContractId + $ClaimValue))   
-    $hashedsearchclaimvalue = [System.Web.HttpUtility]::UrlEncode( [Convert]::ToBase64String($hash) )
-    return Invoke-AdminAPIGet "authorities/$AuthorityId/contracts/$contractid/credentials?filter=indexclaim eq $hashedsearchclaimvalue"
+    $sha256 = [System.Security.Cryptography.HashAlgorithm]::Create('sha256')
+    $inputasbytes = [System.Text.Encoding]::UTF8.GetBytes( $contractid + $claimvalue )
+    $hashedsearchclaimvalue = [System.Convert]::ToBase64String($sha256.ComputeHash($inputasbytes))
+    $qpValue = [System.Web.HTTPUtility]::UrlEncode( $hashedsearchclaimvalue )
+    #$url = "authorities/$AuthorityId/contracts/$contractid/credentials?filter=indexclaimhash eq $qpValue"
+    $url = "https://beta.did.msidentity.com/$($global:tenantId)/api/portable/v1.0/admin/contracts/$ContractId/cards?filter=indexclaim eq $qpValue"
+    $resp = Invoke-AdminAPIGet $url
+    return $resp.value
 }
 <#
 .SYNOPSIS
@@ -507,9 +490,9 @@ function Get-EntraVerifiedIDCredentials( [Parameter(Mandatory=$true)][string]$Au
 .DESCRIPTION
     Revokes an issued credentials based on its id. This operation is irreversable
 .PARAMETER IssuerId
-    Id of the issuer. If omitted, the first issuer will be used via the Get-EntraVerifiedIDAuthorities command
+    Id of the issuer. If omitted, the first issuer will be used via the Get-EntraVerifiedIDAuthority command
 .PARAMETER ContractId
-    Id of the Credential contract. Can be retrieved by the Get-EntraVerifiedIDContracts command
+    Id of the Credential contract. Can be retrieved by the Get-EntraVerifiedIDContract command
 .PARAMETER CredentialId
     Id of the issued credential
 .PARAMETER Force
@@ -531,7 +514,7 @@ function Revoke-EntraVerifiedIDCredential( [Parameter(Mandatory=$false)][string]
         }
     }
     if ( !$AuthorityId ) {
-        $issuers = Get-EntraVerifiedIDAuthorities
+        $issuers = Get-EntraVerifiedIDAuthority
         $AuthorityId = $issuers[0].id
     }    
     return Invoke-AdminAPIUpdate "POST" "authorities/$AuthorityId/contracts/$ContractId/credentials/$CredentialId/revoke" ""
@@ -550,7 +533,7 @@ function Revoke-EntraVerifiedIDCredential( [Parameter(Mandatory=$false)][string]
 .DESCRIPTION
     Gets a Credential Contract's manifest URL
 .PARAMETER IssuerId
-    Id of the Authority. If omitted, the first authority will be used via the Get-EntraVerifiedIDAuthorities command
+    Id of the Authority. If omitted, the first authority will be used via the Get-EntraVerifiedIDAuthority command
 .PARAMETER Name
     Name or the Credential contract. 
 .OUTPUTS
@@ -563,7 +546,7 @@ function Revoke-EntraVerifiedIDCredential( [Parameter(Mandatory=$false)][string]
 function Get-EntraVerifiedIDContractManifestURL( [Parameter(Mandatory=$False)][string]$AuthorityId,
                                                  [Parameter(Mandatory=$True)][string]$Name
                                                ) {
-    $contract = Get-EntraVerifiedIDContracts -AuthorityId $AuthorityId -Name $Name
+    $contract = Get-EntraVerifiedIDContract -AuthorityId $AuthorityId -Name $Name
     if ( !$contract ) {
         return $null
     }
@@ -580,7 +563,7 @@ function Get-EntraVerifiedIDContractManifestURL( [Parameter(Mandatory=$False)][s
 .DESCRIPTION
     Gets a Credential Contract's manifest either signed as a JWT token or unsigned json data
 .PARAMETER AuthorityId
-    Id of the Authority. If omitted, the first authority will be used via the Get-EntraVerifiedIDAuthorities command
+    Id of the Authority. If omitted, the first authority will be used via the Get-EntraVerifiedIDAuthority command
 .PARAMETER Name
     Name or the Credential contract.
 .PARAMETER Signed
@@ -623,8 +606,8 @@ function Get-EntraVerifiedIDContractManifest( [Parameter(Mandatory=$False)][stri
 #>
 function Get-EntraVerifiedIDDidExplorer( [Parameter(Mandatory=$False)][string]$Name, [Parameter(Mandatory=$False)][string]$did ) {
     if ( $Name ) {
-        $issuer = Get-EntraVerifiedIDAuthorities -Name $Name
-        $did = $issuer.didModel.did
+        $authority = Get-EntraVerifiedIDAuthority -Name $Name
+        $did = $authority.didModel.did
     }
     if ( $did ) {
         $url = "https://discover.did.msidentity.com/v1.0/identifiers/$did"
