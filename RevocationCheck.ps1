@@ -14,19 +14,36 @@ param (
     [Parameter(Mandatory=$true)][string]$vpToken
 )
 
-<#
-Function for fixing up base64 strings though some of them lack padding, etc
-#>
-function base64Fixup( [string]$base64string ) {
-    $base64string = $base64string.Replace("-", "+").Replace("_", "/").Replace("*", "=")
-    if ( ($base64string.Length % 4) -gt 0 ) {
-        $base64string = $base64string + "".PadRight( 4-($base64string.Length % 4), "=")
+# ############################################################################
+# Helper functions to bring clarity to the logic in revocation check logic
+# ############################################################################
+
+# Function for fixing up base64 strings though some of them lack padding, etc
+function base64Fixup( [string]$base64 ) {
+    $base64 = $base64.Replace("-", "+").Replace("_", "/").Replace("*", "=")
+    if ( ($base64.Length % 4) -gt 0 ) {
+        $base64 = $base64 + "".PadRight( 4-($base64.Length % 4), "=")
     }
-    return $base64string
+    return $base64
 }
-<#
-GZIP decompress function
-#>
+# Function to decode a base64 to byte array
+function decodeBase64( [string]$base64 ) {
+    return [System.Convert]::FromBase64String( $(base64Fixup $base64) )
+}
+# Function to decode a base64 string
+function decodeBase64ToString( [string]$base64 ) {
+    return [System.Text.Encoding]::UTF8.GetString( ( $(decodeBase64 $base64) )) 
+}
+# Function to convert a base64 string, containing JSON, to a JSON object
+function base64ToJSON( [string]$base64 ) {
+    return ( $(decodeBase64ToString $base64) | ConvertFrom-json)    
+}
+# Function to contain a JWT Token's claims to JSON
+function jwtTokenToJSON( [string]$jwtToken ) {
+    return base64ToJSON $jwtToken.Split(".")[1]
+}
+
+# GZIP decompress function
 function gzipDecompress( [byte[]]$byteArray ) {
     $msIn = New-Object System.IO.MemoryStream( , $byteArray )
     $msOut = New-Object System.IO.MemoryStream
@@ -39,16 +56,16 @@ function gzipDecompress( [byte[]]$byteArray ) {
     return $retval
 }
 
+# ############################################################################
+# Revocation Check logic
+# ############################################################################
+
 <#
 The vp token being presented is a JWT token and contains the following claims:
 - aud : issuer's DID
 - vp.type : Must be 'VerifiablePresentation' or we have the wrong type of token
 #>
-if ( $vpToken.Contains(".")) {
-    $vpToken = $vpToken.Split(".")[1]
-}
-$vpToken = base64Fixup $vpToken
-$vpClaims = ( [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String( $vpToken )) | ConvertFrom-json)
+$vpClaims = jwtTokenToJSON $vpToken
 if ( !($vpClaims.vp.type.Contains("VerifiablePresentation") )) {
     write-error "Wrong vp.type: [$($vcClaims.vc.type -Join " ," )]. Must contain 'VerifiablePresentation'"
     exit 1
@@ -61,8 +78,7 @@ The claim vc.credentialStatus.statusListCredential contains this:  'did:method:<
 The service gives us the type name to look for a matching service in the issuer's did document.
 The queries gives is the 'descriptor' of how to query for the correct data (see JSON below)
 #>
-$vc = base64Fixup $vpClaims.vp.verifiableCredential.Split(".")[1]
-$vcClaims = ( [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String( $vc )) | ConvertFrom-json)
+$vcClaims = jwtTokenToJSON $vpClaims.vp.verifiableCredential
 if ( $vcClaims.vc.credentialStatus.type -ne "RevocationList2021Status" ) {
     write-error "Wrong credentialStatus.type: $($vcClaims.vc.credentialStatus.type). Must be 'RevocationList2021Status'"
     exit 1
@@ -71,18 +87,8 @@ write-host "VC Type  :" $vcClaims.vc.type[1] "`nVC Claims: " $vcClaims.vc.creden
 
 $qpParams = $vcClaims.vc.credentialStatus.statusListCredential.Split("?")[1].Split("&")
 $serviceType = ($qpParams | where {$_.StartsWith("service")}).Split("=")[1]
-$queries = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String( ($qpParams | where {$_.StartsWith("queries")}).Split("=")[1] ))
-$bodyReq = @"
-{
-    "requestId": "$((new-Guid).Guid.ToString())",
-    "target": "$($vpClaims.aud)",
-    "messages": [
-        {
-            "descriptor": $(($queries | ConvertFrom-json) | ConvertTo-json)
-        }
-    ]
-}
-"@
+$queries = decodeBase64ToString ($qpParams | where {$_.StartsWith("queries")}).Split("=")[1]
+
 <#
 We need to resolve the issuer's DID in order to find out the endpoint for checking status.
 - didDocument.service : should contain and entry where type == 'IdentityHub' (matching VCs $serviceType) where the serviceEndpoint is the URL for getting statusList2021 data
@@ -98,7 +104,17 @@ write-host "VC Issuer: " $vpClaims.aud "`nDomains  : " $linkedDomains "`n"
 Query the serviceEndpoint for the revocation list data
 #>
 write-host "Retriving StatusList2021 from Hub Endpoint $hubEndpoint ..."
-$resp = Invoke-RestMethod -Method "POST" -Uri $hubEndpoint -ContentType "application/json" -Body $bodyReq
+$resp = Invoke-RestMethod -Method "POST" -Uri $hubEndpoint -ContentType "application/json" -Body @"
+{
+    "requestId": "$((new-Guid).Guid.ToString())",
+    "target": "$($vpClaims.aud)",
+    "messages": [
+        {
+            "descriptor": $(($queries | ConvertFrom-json) | ConvertTo-json)
+        }
+    ]
+}
+"@
 
 <#
 The JSON response is structured like this. You will only have 1 entry in each collection and the 'data' claim contains the data
@@ -110,9 +126,7 @@ Since the statusList is a bit array, gzip compressing it means that continuous z
 may be compressed to under 100 bytes.
 #>
 write-host "Decompressing status list and checking revocation..."
-$data = ( [System.Text.Encoding]::UTF8.GetString( [System.Convert]::FromBase64String( $resp.replies[0].entries[0].data ) ) ).Split(".")[1].Replace("_","/")
-$data = base64Fixup $data
-$hubClaims = ( [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String( $data )) | ConvertFrom-json)
+$hubClaims = jwtTokenToJSON (decodeBase64ToString $resp.replies[0].entries[0].data)
 if ( !($hubClaims.vc.type.Contains( "StatusList2021Credential" ) ) ){
     write-error "Wrong type in revocation list: [$($hubClaims.vc.type -Join ", ")]. Must contain 'StatusList2021Credential'"
     exit 1
@@ -120,9 +134,7 @@ if ( !($hubClaims.vc.type.Contains( "StatusList2021Credential" ) ) ){
 <#
  base64Decode and then gzipDecompress the data
 #>
-$encodedList = base64Fixup $hubClaims.vc.credentialSubject.encodedList
-[byte[]]$byteArray = [System.Convert]::FromBase64String($encodedList)
-$revocationList = gzipDecompress $byteArray
+$revocationList = gzipDecompress (decodeBase64 $hubClaims.vc.credentialSubject.encodedList)
 <#
 In the VC the holder presented, there is a claim 'statusListIndex' that is an index to this VCs bit in the array
 #>
