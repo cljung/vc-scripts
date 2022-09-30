@@ -43,6 +43,9 @@ function jwtTokenToJSON( [string]$jwtToken ) {
     return base64ToJSON $jwtToken.Split(".")[1]
 }
 
+function getQueryStringParameter( [string]$params, [string]$name ) {    
+    return ( ($params.Split("?")[1].Split("&")) | where {$_.StartsWith($name)}).Split("=")[1]
+}
 # GZIP decompress function
 function gzipDecompress( [byte[]]$byteArray ) {
     $msIn = New-Object System.IO.MemoryStream( , $byteArray )
@@ -61,53 +64,66 @@ function gzipDecompress( [byte[]]$byteArray ) {
 # ############################################################################
 
 <#
-The vp token being presented is a JWT token and contains the following claims:
-- aud : issuer's DID
-- vp.type : Must be 'VerifiablePresentation' or we have the wrong type of token
+We accept a VC of type VerifiablePresentation (which contains a VerifiableCredential) or a VerifiableCredential
 #>
-$vpClaims = jwtTokenToJSON $vpToken
-if ( !($vpClaims.vp.type.Contains("VerifiablePresentation") )) {
-    write-error "Wrong vp.type: [$($vcClaims.vc.type -Join " ," )]. Must contain 'VerifiablePresentation'"
+$vpClaims = $null
+$vcClaims = $null
+$token = jwtTokenToJSON $vpToken
+if ( $token.vp -and $token.vp.type.Contains("VerifiablePresentation") ) {
+    $vpClaims = $token
+    $vcClaims = jwtTokenToJSON $vpClaims.vp.verifiableCredential
+}
+if ( $token.vc -and $token.vc.type.Contains("VerifiableCredential") ) {
+    $vcClaims = $token
+}
+if ( $null -eq $vcClaims ) {
+    write-error "Wrong vp.type: [$($token.vc.type -Join " ," )]. Must contain 'VerifiablePresentation' or 'VerifiableCredential'"
     exit 1
 }
+
 <#
-In the vp token, there is a vp.cerifiableCredential claim that is the VC the holder presented (in JWT token format)
-The vc token should have a claim of 'vc.credentialStatus.type == 'RevocationList2021Status'. If it doesn't, we
-don't have data to check if this VC is revoked.
-The claim vc.credentialStatus.statusListCredential contains this:  'did:method:<id>?service=IdentityHub&queries=<base64string>'
-The service gives us the type name to look for a matching service in the issuer's did document.
-The queries gives is the 'descriptor' of how to query for the correct data (see JSON below)
+We support a VC with vc.credentialStatus.type == 'RevocationList2021Status' or 'StatusList2021Entry' 
 #>
-$vcClaims = jwtTokenToJSON $vpClaims.vp.verifiableCredential
-if ( $vcClaims.vc.credentialStatus.type -ne "RevocationList2021Status" ) {
-    write-error "Wrong credentialStatus.type: $($vcClaims.vc.credentialStatus.type). Must be 'RevocationList2021Status'"
+if ( !($vcClaims.vc.credentialStatus.type -eq "RevocationList2021Status" `
+   -or $vcClaims.vc.credentialStatus.type -eq "StatusList2021Entry" )) {
+    write-error "Wrong credentialStatus.type: $($vcClaims.vc.credentialStatus.type). Must be 'RevocationList2021Status' or 'StatusList2021Entry'"
     exit 1
 }
-write-host "VC Type  :" $vcClaims.vc.type[1] "`nVC Claims: " $vcClaims.vc.credentialSubject "`nDID      :" $vcClaims.sub "`n"
 
-$qpParams = $vcClaims.vc.credentialStatus.statusListCredential.Split("?")[1].Split("&")
-$serviceType = ($qpParams | where {$_.StartsWith("service")}).Split("=")[1]
-$queries = decodeBase64ToString ($qpParams | where {$_.StartsWith("queries")}).Split("=")[1]
+write-host "VC Type       :" $vcClaims.vc.type[1]
+write-host "VC Claims     :" $vcClaims.vc.credentialSubject
+write-host "VC Status Type:" $vcClaims.vc.credentialStatus.type
+write-host "VC DID        :" $vcClaims.sub "`n"
 
 <#
-We need to resolve the issuer's DID in order to find out the endpoint for checking status.
-- didDocument.service : should contain and entry where type == 'IdentityHub' (matching VCs $serviceType) where the serviceEndpoint is the URL for getting statusList2021 data
+Resolve the Issuer's DID Document. 
+For type StatusList2021Entry, this is not needed, but we do it anyway here so we can show the linked domain. 
+For type RevocationList2021Status, we need did.didDocument.service since it is the URL to get the revocation list from
 #>
 write-host "Resolving issuers DID Document..."
-$did = Invoke-RestMethod -Method "GET" -Uri "https://discover.did.msidentity.com/v1.0/identifiers/$($vpClaims.aud)"
+$did = Invoke-RestMethod -Method "GET" -Uri "https://discover.did.msidentity.com/v1.0/identifiers/$($vcClaims.iss)"
+$linkedDomains = ($did.didDocument.service | where {$_.type -eq "LinkedDomains"}).serviceEndpoint
+if ( $linkedDomains.origins ) {
+    $linkedDomains = $linkedDomains.origins
+}
+write-host "VC Issuer: " $vcClaims.iss "`nDomains  : " $linkedDomains "`n"
 
-$hubEndpoint = ($did.didDocument.service | where {$_.type -eq $serviceType}).serviceEndpoint.instances[0]
-$linkedDomains = ($did.didDocument.service | where {$_.type -eq "LinkedDomains"}).serviceEndpoint.origins
-write-host "VC Issuer: " $vpClaims.aud "`nDomains  : " $linkedDomains "`n"
-
-<#
-Query the serviceEndpoint for the revocation list data
-#>
-write-host "Retriving StatusList2021 from Hub Endpoint $hubEndpoint ..."
-$resp = Invoke-RestMethod -Method "POST" -Uri $hubEndpoint -ContentType "application/json" -Body @"
+# ----------------------------------------------------------------------------
+# RevocationList2021Status
+# The claim vc.credentialStatus.statusListCredential contains this:
+#    'did:method:<id>?service=IdentityHub&queries=<base64string>'
+# - service : the type name to look for a matching service in the issuer's did document.
+# - queries : the 'descriptor' of how to query for the correct data (see JSON below)
+# ----------------------------------------------------------------------------
+if ( $vcClaims.vc.credentialStatus.type -eq "RevocationList2021Status" ) {
+    $queries = decodeBase64ToString $(getQueryStringParameter $vcClaims.vc.credentialStatus.statusListCredential "queries")
+    $serviceType = getQueryStringParameter $vcClaims.vc.credentialStatus.statusListCredential "service"
+    $hubEndpoint = ($did.didDocument.service | where {$_.type -eq $serviceType}).serviceEndpoint.instances[0]
+    write-host "Retriving StatusList2021 from $serviceType $hubEndpoint..."
+    $resp = Invoke-RestMethod -Method "POST" -Uri $hubEndpoint -ContentType "application/json" -Body @"
 {
     "requestId": "$((new-Guid).Guid.ToString())",
-    "target": "$($vpClaims.aud)",
+    "target": "$($vcClaims.iss)",
     "messages": [
         {
             "descriptor": $(($queries | ConvertFrom-json) | ConvertTo-json)
@@ -115,29 +131,39 @@ $resp = Invoke-RestMethod -Method "POST" -Uri $hubEndpoint -ContentType "applica
     ]
 }
 "@
+    <#
+    The JSON response is structured like this: replies[0].entries[0].data
+    There will only be 1 entry of replies and entries. The 'data' is a VC containing the revocation list
+      #>
+    $vcRevocation = jwtTokenToJSON (decodeBase64ToString $resp.replies[0].entries[0].data)
+} 
 
-<#
-The JSON response is structured like this. You will only have 1 entry in each collection and the 'data' claim contains the data
-    replies[0].entries[0].data
-The 'data' claim is base64 encoded and after you've base64Decoded the data you would get this ($hubClaims below)
-  vc.type == StatusList2021Credential
-In the vc.credentialSubject.encodedList claim is created like this: base64Encode(gzipCompress(encodedList))  
-Since the statusList is a bit array, gzip compressing it means that continuous zeros will be heavily compressed and a 130K block
-may be compressed to under 100 bytes.
-#>
-write-host "Decompressing status list and checking revocation..."
-$hubClaims = jwtTokenToJSON (decodeBase64ToString $resp.replies[0].entries[0].data)
-if ( !($hubClaims.vc.type.Contains( "StatusList2021Credential" ) ) ){
-    write-error "Wrong type in revocation list: [$($hubClaims.vc.type -Join ", ")]. Must contain 'StatusList2021Credential'"
+# ----------------------------------------------------------------------------
+# StatusList2021Entry. 
+# The statusListCredential is a URL that gives us the revocation list in a VC
+# ----------------------------------------------------------------------------
+if ( $vcClaims.vc.credentialStatus.type -eq "StatusList2021Entry" ) {
+    write-host "Retriving StatusList2021 from $($vcClaims.vc.credentialStatus.statusListCredential) ..."
+    $resp = Invoke-RestMethod -Method "GET" -Uri $vcClaims.vc.credentialStatus.statusListCredential 
+    $vcRevocation = jwtTokenToJSON $resp
+}
+
+# ----------------------------------------------------------------------------
+# Common to RevocationList2021Status + StatusList2021Entry. 
+# ----------------------------------------------------------------------------
+# Check that the revocation list is of the correct type
+if ( !($vcRevocation.vc.type.Contains( "StatusList2021Credential" ) ) ){
+    write-error "Wrong type in revocation list: [$($vcRevocation.vc.type -Join ", ")]. Must contain 'StatusList2021Credential'"
     exit 1
 }
 <#
- base64Decode and then gzipDecompress the data
+The revocation list data is in the encodedList claim. It is GZIP compressed and in base64 format.
+Once base64 decoded and gzip uncompressed, it is an array of bits where the holders VC's statusListIndex
+tells us what bit to check for revocation status.
 #>
-$revocationList = gzipDecompress (decodeBase64 $hubClaims.vc.credentialSubject.encodedList)
-<#
-In the VC the holder presented, there is a claim 'statusListIndex' that is an index to this VCs bit in the array
-#>
+write-host "Decompressing status list and checking revocation...`n"
+$revocationList = gzipDecompress (decodeBase64 $vcRevocation.vc.credentialSubject.encodedList)
 $isRevoked = ($revocationList[$vcClaims.vc.credentialStatus.statusListIndex] -eq 1)
-
-write-host "StatusList entries: " $revocationList.Count "`nVC Index          : " $vcClaims.vc.credentialStatus.statusListIndex "`nIs revoked?       : " $isRevoked
+write-host "StatusList entries: " $revocationList.Count 
+write-host "VC Index          : " $vcClaims.vc.credentialStatus.statusListIndex
+write-host "Is revoked?       : " $isRevoked
