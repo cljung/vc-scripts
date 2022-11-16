@@ -14,8 +14,8 @@ param (
     [Parameter(Mandatory=$false)][switch]$OutputToConsole = $False
 )
 
-$authority = Get-EntraVerifiedIDAuthorities
-$contract = Get-EntraVerifiedIDContracts -AuthorityId $authority.id -Name $ContractName
+$authority = Get-EntraVerifiedIDAuthority
+$contract = Get-EntraVerifiedIDContract -AuthorityId $authority.id -Name $ContractName
 $manifestUrl = Get-EntraVerifiedIDContractManifestURL -AuthorityId $authority.id -Name $contract.name
 $tenantId = $manifestUrl.Split("/")[5]
 $manifest = Get-EntraVerifiedIDContractManifest -AuthorityId $authority.id -Name $contract.name
