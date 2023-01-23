@@ -120,7 +120,7 @@ if ( $vcClaims.vc.credentialStatus.type -eq "RevocationList2021Status" ) {
     $serviceType = getQueryStringParameter $vcClaims.vc.credentialStatus.statusListCredential "service"
     $hubEndpoint = ($did.didDocument.service | where {$_.type -eq $serviceType}).serviceEndpoint.instances[0]
     write-host "Retriving StatusList2021 from $serviceType $hubEndpoint..."
-    $resp = Invoke-RestMethod -Method "POST" -Uri $hubEndpoint -ContentType "application/json" -Body @"
+    $vcRevocationJwt = Invoke-RestMethod -Method "POST" -Uri $hubEndpoint -ContentType "application/json" -Body @"
 {
     "requestId": "$((new-Guid).Guid.ToString())",
     "target": "$($vcClaims.iss)",
@@ -135,7 +135,7 @@ if ( $vcClaims.vc.credentialStatus.type -eq "RevocationList2021Status" ) {
     The JSON response is structured like this: replies[0].entries[0].data
     There will only be 1 entry of replies and entries. The 'data' is a VC containing the revocation list
       #>
-    $vcRevocation = jwtTokenToJSON (decodeBase64ToString $resp.replies[0].entries[0].data)
+    $vcRevocation = jwtTokenToJSON (decodeBase64ToString $vcRevocationJwt.replies[0].entries[0].data)
 } 
 
 # ----------------------------------------------------------------------------
@@ -144,8 +144,8 @@ if ( $vcClaims.vc.credentialStatus.type -eq "RevocationList2021Status" ) {
 # ----------------------------------------------------------------------------
 if ( $vcClaims.vc.credentialStatus.type -eq "StatusList2021Entry" ) {
     write-host "Retriving StatusList2021 from $($vcClaims.vc.credentialStatus.statusListCredential) ..."
-    $resp = Invoke-RestMethod -Method "GET" -Uri $vcClaims.vc.credentialStatus.statusListCredential 
-    $vcRevocation = jwtTokenToJSON $resp
+    $vcRevocationJwt = Invoke-RestMethod -Method "GET" -Uri $vcClaims.vc.credentialStatus.statusListCredential 
+    $vcRevocation = jwtTokenToJSON $vcRevocationJwt
 }
 
 # ----------------------------------------------------------------------------
@@ -156,6 +156,8 @@ if ( !($vcRevocation.vc.type.Contains( "StatusList2021Credential" ) ) ){
     write-error "Wrong type in revocation list: [$($vcRevocation.vc.type -Join ", ")]. Must contain 'StatusList2021Credential'"
     exit 1
 }
+write-host "VC StatusList     : " $vcRevocationJwt
+
 <#
 The revocation list data is in the encodedList claim. It is GZIP compressed and in base64 format.
 Once base64 decoded and gzip uncompressed, it is an array of bits where the holders VC's statusListIndex
@@ -163,7 +165,18 @@ tells us what bit to check for revocation status.
 #>
 write-host "Decompressing status list and checking revocation...`n"
 $revocationList = gzipDecompress (decodeBase64 $vcRevocation.vc.credentialSubject.encodedList)
-$isRevoked = ($revocationList[$vcClaims.vc.credentialStatus.statusListIndex] -eq 1)
+$statusListIndex = $vcClaims.vc.credentialStatus.statusListIndex
+$byteIndex=[int]($statusListIndex/8)
+$bitIndex=($statusListIndex%8)
+# create array of mask bits from 0x10000000...0x00000001
+[byte[]]$maskBits = @( 128, 64, 32, 16, 8, 4, 2, 1 )
+$isRevoked = ($revocationList[$byteIndex] -band $maskBits[$bitIndex]) ? $True : $False
+$label = "........".SubString(0,$bitIndex) + "^" + ".......".SubString($bitIndex)
 write-host "StatusList entries: " $revocationList.Count 
 write-host "VC Index          : " $vcClaims.vc.credentialStatus.statusListIndex
 write-host "Is revoked?       : " $isRevoked
+write-host "Revocation Byte   : " ([convert]::ToString($revocationList[$byteIndex],2))
+write-host "                    " $label
+write-host "Byte index [0..N] : " $byteIndex
+write-host "Bit index [0..7]  : " $bitIndex
+
