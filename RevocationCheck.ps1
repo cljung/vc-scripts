@@ -166,17 +166,28 @@ tells us what bit to check for revocation status.
 write-host "Decompressing status list and checking revocation...`n"
 $revocationList = gzipDecompress (decodeBase64 $vcRevocation.vc.credentialSubject.encodedList)
 $statusListIndex = $vcClaims.vc.credentialStatus.statusListIndex
+# create an index to the byte and the bit within the byte
 $byteIndex=[int]($statusListIndex/8)
 $bitIndex=($statusListIndex%8)
 # create array of mask bits from 0x10000000...0x00000001
 [byte[]]$maskBits = @( 128, 64, 32, 16, 8, 4, 2, 1 )
 $isRevoked = ($revocationList[$byteIndex] -band $maskBits[$bitIndex]) ? $True : $False
-$label = "........".SubString(0,$bitIndex) + "^" + ".......".SubString($bitIndex)
-write-host "StatusList entries: " $revocationList.Count 
+# convert the byte to a bit string and pad with leading zeroes
+$revocationByteMask = [convert]::ToString($revocationList[$byteIndex],2).PadLeft(8, "0")
+# create a label to point to the bit in question
+$label = "^".PadRight($bitIndex, "-").PadLeft(8,"-")
+
+write-host "StatusList entries: " ($revocationList.Count * 8)
 write-host "VC Index          : " $vcClaims.vc.credentialStatus.statusListIndex
 write-host "Is revoked?       : " $isRevoked
-write-host "Revocation Byte   : " ([convert]::ToString($revocationList[$byteIndex],2))
+write-host "Revocation Byte   : " $revocationByteMask
 write-host "                    " $label
 write-host "Byte index [0..N] : " $byteIndex
 write-host "Bit index [0..7]  : " $bitIndex
 
+write-host "`nBitString"
+for ( $i = 0; $i -le ($statusListIndex/8); $i++ ) {
+    write-host -NoNewLine ([convert]::ToString($revocationList[$i],2).PadLeft(8, "0").PadRight(9, " "))
+}
+
+#write-host "`n$revocationList"
