@@ -115,7 +115,7 @@ write-host "VC Issuer: " $vcClaims.iss "`nDomains  : " $linkedDomains "`n"
 # - service : the type name to look for a matching service in the issuer's did document.
 # - queries : the 'descriptor' of how to query for the correct data (see JSON below)
 # ----------------------------------------------------------------------------
-if ( $vcClaims.vc.credentialStatus.type -eq "RevocationList2021Status" ) {
+if ( $vcClaims.vc.credentialStatus.type -eq "RevocationList2021Status" -and $vcClaims.vc.credentialStatus.statusListCredential.StartsWith("https://") -eq $false ) {
     $queries = decodeBase64ToString $(getQueryStringParameter $vcClaims.vc.credentialStatus.statusListCredential "queries")
     $serviceType = getQueryStringParameter $vcClaims.vc.credentialStatus.statusListCredential "service"
     $hubEndpoint = ($did.didDocument.service | where {$_.type -eq $serviceType}).serviceEndpoint.instances[0]
@@ -138,6 +138,12 @@ if ( $vcClaims.vc.credentialStatus.type -eq "RevocationList2021Status" ) {
     $vcRevocation = jwtTokenToJSON (decodeBase64ToString $vcRevocationJwt.replies[0].entries[0].data)
 } 
 
+if ( $vcClaims.vc.credentialStatus.type -eq "RevocationList2021Status" -and $vcClaims.vc.credentialStatus.statusListCredential.StartsWith("https://")) {
+    write-host "Retriving RevocationList2021Status from $($vcClaims.vc.credentialStatus.statusListCredential) ..."
+    $vcRevocationJwt = Invoke-RestMethod -Method "GET" -Uri $vcClaims.vc.credentialStatus.statusListCredential 
+    $vcRevocation = jwtTokenToJSON $vcRevocationJwt
+}
+
 # ----------------------------------------------------------------------------
 # StatusList2021Entry. 
 # The statusListCredential is a URL that gives us the revocation list in a VC
@@ -148,6 +154,10 @@ if ( $vcClaims.vc.credentialStatus.type -eq "StatusList2021Entry" ) {
     $vcRevocation = jwtTokenToJSON $vcRevocationJwt
 }
 
+if ( $null -eq $vcRevocation ) {
+    write-error "Couldn't retrieve the status list"
+    exit 1
+}
 # ----------------------------------------------------------------------------
 # Common to RevocationList2021Status + StatusList2021Entry. 
 # ----------------------------------------------------------------------------
@@ -171,11 +181,11 @@ $byteIndex=[int]($statusListIndex/8)
 $bitIndex=($statusListIndex%8)
 # create array of mask bits from 0x10000000...0x00000001
 [byte[]]$maskBits = @( 128, 64, 32, 16, 8, 4, 2, 1 )
-$isRevoked = ($revocationList[$byteIndex] -band $maskBits[$bitIndex]) ? $True : $False
+$isRevoked = ($revocationList[$byteIndex] -bAnd $maskBits[$bitIndex]) ? $True : $False
 # convert the byte to a bit string and pad with leading zeroes
 $revocationByteMask = [convert]::ToString($revocationList[$byteIndex],2).PadLeft(8, "0")
 # create a label to point to the bit in question
-$label = "^".PadRight($bitIndex, "-").PadLeft(8,"-")
+$label = "^".PadLeft($bitIndex+1, "-").PadRight(8,"-")
 
 write-host "StatusList entries: " ($revocationList.Count * 8)
 write-host "VC Index          : " $vcClaims.vc.credentialStatus.statusListIndex
@@ -191,3 +201,9 @@ for ( $i = 0; $i -le ($statusListIndex/8); $i++ ) {
 }
 
 #write-host "`n$revocationList"
+<#
+# for testing and dumping out how the maskBits look like
+for ( $i = 0; $i -lt $maskBits.Count; $i++ ) {
+    write-host -NoNewLine ([convert]::ToString($maskBits[$i],2).PadLeft(8, "0").PadRight(9, " "))
+}
+#>
