@@ -40,7 +40,7 @@ $global:scope = $scope
 ################################################################################################################################################
 # Helper functions
 ################################################################################################################################################
-function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]$body, [string]$TenantRegion ) {
+function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]$body ) {
     if ( $path.StartsWith("https://")) {
         $url = $path
     } else {
@@ -70,12 +70,12 @@ function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]
     }
     return $resp    
 }
-function Invoke-AdminAPIGet( [string]$path, [string]$TenantRegion ) {
-    return Invoke-RestMethodWithMsal "GET" $path $null $TenantRegion
+function Invoke-AdminAPIGet( [string]$path ) {
+    return Invoke-RestMethodWithMsal "GET" $path $null
 }
 
-function Invoke-AdminAPIUpdate( [string]$httpMethod, [string]$path, [string]$body, [string]$TenantRegion ) {
-    return Invoke-RestMethodWithMsal $httpMethod $path $body $TenantRegion
+function Invoke-AdminAPIUpdate( [string]$httpMethod, [string]$path, [string]$body ) {
+    return Invoke-RestMethodWithMsal $httpMethod $path $body
 }
 
 ################################################################################################################################################
@@ -84,6 +84,17 @@ function Invoke-AdminAPIUpdate( [string]$httpMethod, [string]$path, [string]$bod
 #-----------------------------------------------------------------------------------------------------------------------------------------------
 # Onboard tenant & Out-out
 #-----------------------------------------------------------------------------------------------------------------------------------------------
+<#
+.SYNOPSIS
+    Gets Azure AD tenant details for Entra Verified ID
+.DESCRIPTION
+    Gets Azure AD tenant details for Entra Verified ID
+.EXAMPLE
+    Get-EntraVerifiedIDTenantSettings
+#>
+function Get-EntraVerifiedIDTenantSettings() {
+    return Invoke-AdminAPIGet "organizationSettings"
+}
 <#
 .SYNOPSIS
     Onboards the Azure AD tenant to Entra Verified ID
@@ -481,9 +492,9 @@ function Get-EntraVerifiedIDCredentials( [Parameter(Mandatory=$true)][string]$Au
     $inputasbytes = [System.Text.Encoding]::UTF8.GetBytes( $contractid + $claimvalue )
     $hashedsearchclaimvalue = [System.Convert]::ToBase64String($sha256.ComputeHash($inputasbytes))
     $qpValue = [System.Web.HTTPUtility]::UrlEncode( $hashedsearchclaimvalue )
-    #$url = "authorities/$AuthorityId/contracts/$contractid/credentials?filter=indexclaimhash eq $qpValue"
-    $url = "https://beta.did.msidentity.com/$($global:tenantId)/api/portable/v1.0/admin/contracts/$ContractId/cards?filter=indexclaim eq $qpValue"
+    $url = "authorities/$AuthorityId/contracts/$contractid/credentials?filter=indexclaimhash eq $qpValue"
     $resp = Invoke-AdminAPIGet $url
+    #$url = "https://beta.did.msidentity.com/$($global:tenantId)/api/portable/v1.0/admin/contracts/$ContractId/cards?filter=indexclaim eq $qpValue"
     return $resp.value
 }
 <#
@@ -632,11 +643,9 @@ function Get-EntraVerifiedIDDidExplorer( [Parameter(Mandatory=$False)][string]$N
 .EXAMPLE
     Get-EntraVerifiedIDNetworkIssuers
 #>
-function Get-EntraVerifiedIDNetworkIssuers( [Parameter(Mandatory=$false)][string]$DomainSearch,
-                                            [Parameter(Mandatory=$False)][string]$TenantRegion 
-                                          ) {
+function Get-EntraVerifiedIDNetworkIssuers( [Parameter(Mandatory=$false)][string]$DomainSearch ) {
     if ( !$DomainSearch ) { $DomainSearch = "%20" }
-    $resp = Invoke-AdminAPIGet "/v1.0/verifiableCredentialsNetwork/authorities?filter=linkeddomainurls like $DomainSearch" $TenantRegion
+    $resp = Invoke-AdminAPIGet "/v1.0/verifiableCredentialsNetwork/authorities?filter=linkeddomainurls like $DomainSearch"
     return $resp.value
 }
 <#
@@ -656,8 +665,7 @@ function Get-EntraVerifiedIDNetworkIssuers( [Parameter(Mandatory=$false)][string
     Get-EntraVerifiedIDNetworkIssuerContracts
 #>
 function Get-EntraVerifiedIDNetworkIssuerContracts( [Parameter(Mandatory=$True)][string]$TenantId
-                                            , [Parameter(Mandatory=$True)][string]$AuthorityId
-                                            , [Parameter(Mandatory=$False)][string]$TenantRegion ) {
-    $resp = Invoke-AdminAPIGet "/v1.0/tenants/$tenantId/verifiableCredentialsNetwork/authorities/$AuthorityId/contracts" $TenantRegion
+                                            , [Parameter(Mandatory=$True)][string]$AuthorityId ) {
+    $resp = Invoke-AdminAPIGet "/v1.0/tenants/$tenantId/verifiableCredentialsNetwork/authorities/$AuthorityId/contracts"
     return  $resp.value
 }
