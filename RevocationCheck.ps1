@@ -11,7 +11,8 @@
     .\RevocationCheck.ps1 -vpToken $vpToken
 #>
 param (
-    [Parameter(Mandatory=$true)][string]$vpToken
+    [Parameter(Mandatory=$true)][string]$vpToken,
+    [Parameter(Mandatory=$false)][switch]$ReverseOrderBitCheck = $True
 )
 
 # ############################################################################
@@ -179,8 +180,13 @@ $statusListIndex = $vcClaims.vc.credentialStatus.statusListIndex
 # create an index to the byte and the bit within the byte
 $byteIndex=[int]($statusListIndex/8)
 $bitIndex=($statusListIndex%8)
-# create array of mask bits from 0x10000000...0x00000001
-[byte[]]$maskBits = @( 128, 64, 32, 16, 8, 4, 2, 1 )
+
+# create array of mask bits from 0x00000001...0x10000000
+[byte[]]$maskBits = @( 1, 2, 4, 8, 16, 32, 64, 128, 128 )
+if ( $ReverseOrderBitCheck ) {
+    # create array of mask bits from 0x10000000...0x00000001
+    [byte[]]$maskBits = @( 128, 64, 32, 16, 8, 4, 2, 1 )
+}
 $isRevoked = ($revocationList[$byteIndex] -bAnd $maskBits[$bitIndex]) ? $True : $False
 # convert the byte to a bit string and pad with leading zeroes
 $revocationByteMask = [convert]::ToString($revocationList[$byteIndex],2).PadLeft(8, "0")
