@@ -35,6 +35,7 @@ $global:tenantRegionScope = $tenantMetadata.tenant_region_scope # WW, NA, EU, AF
 $global:tenantId = $tenantId
 $global:clientId = $clientId
 $global:scope = $scope
+$global:VerifiedIDHostname = "https://verifiedid.did.msidentity.com"
 }
 
 ################################################################################################################################################
@@ -45,19 +46,20 @@ function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]
         $url = $path
     } else {
         if ( $path.StartsWith("/") ) {
-            $url="https://verifiedid.did.msidentity.com$path"
+            $url="$global:VerifiedIDHostname$path"
         } else {
-            $url="https://verifiedid.did.msidentity.com/v1.0/verifiableCredentials/$path"
+            $url="$global:VerifiedIDHostname/v1.0/verifiableCredentials/$path"
         }
     }
-    write-verbose "$httpMethod $url"
     $msalParams = @{ ClientId = $global:clientId; TenantId = $global:tenantId; Scopes = $global:scope }
     $msalResp = Get-MsalToken @msalParams
     $authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$msalResp.TokenType + ' ' + $msalResp.AccessToken }
     try {
         if ( $httpMethod -eq "GET" ) {
+            write-verbose "$httpMethod $url`n$($authHeader | ConvertTo-json)" #$msalResp.AccessToken
             $resp = Invoke-RestMethod -Method "GET" -Headers $authHeader -Uri $url -ErrorAction Stop
         } else {
+            write-verbose "$httpMethod $url`n$($authHeader | ConvertTo-json)`n$body" #$msalResp.AccessToken
             $resp = Invoke-RestMethod -Method $httpMethod -Uri $url -Headers $authHeader -Body $body -ContentType "application/json" -ErrorAction Stop
         }
     } catch {
@@ -107,6 +109,16 @@ function Enable-EntraVerifiedIDTenant() {
     return Invoke-AdminAPIUpdate "POST"  "onboard" ""
 }
 
+function Enable-EntraVerifiedIDTenantQuick( [Parameter(Mandatory=$True)][string]$Name
+                                          , [Parameter(Mandatory=$True)][string]$LinkedDomainUrl) {
+$body = @"
+{
+    "name":"$Name",
+    "linkedDomainUrl":"$LinkedDomainUrl"
+}
+"@
+    return Invoke-AdminAPIUpdate "POST"  "onboardZeroConfig" $body 
+}
 <#
 .SYNOPSIS
     Opts-out Entra Verified ID for the Azure AD tenant
@@ -210,8 +222,12 @@ function Update-EntraVerifiedIDAuthority( [Parameter(Mandatory=$True)][string]$I
 .EXAMPLE
     Rotate-EntraVerifiedIDAuthoritySigningKey -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
 #>
-function Rotate-EntraVerifiedIDAuthoritySigningKey( [Parameter(Mandatory=$True)][string]$Id ) {
-    return Invoke-AdminAPIUpdate "POST" "authorities/$id/rotateSigningKey" 
+function Rotate-EntraVerifiedIDAuthoritySigningKey( [Parameter(Mandatory=$True)][string]$AuthorityId ) {
+    #return Invoke-AdminAPIUpdate "POST" "authorities/$id/rotateSigningKey" 
+    return Invoke-AdminAPIUpdate "POST" "authorities/$Authorityid/didInfo/signingKeys/rotate"
+}
+function Deploy-EntraVerifiedIDAuthoritySigningKey( [Parameter(Mandatory=$True)][string]$AuthorityId ) {
+    return Invoke-AdminAPIUpdate "POST" "authorities/$Authorityid/didInfo/synchronizeWithDidDocument"
 }
 
 <#
