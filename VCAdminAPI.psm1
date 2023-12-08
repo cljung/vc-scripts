@@ -75,9 +75,11 @@ function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]
 function Invoke-AdminAPIGet( [string]$path ) {
     return Invoke-RestMethodWithMsal "GET" $path $null
 }
-
-function Invoke-AdminAPIUpdate( [string]$httpMethod, [string]$path, [string]$body ) {
-    return Invoke-RestMethodWithMsal $httpMethod $path $body
+function Invoke-AdminAPIPost( [string]$path, [string]$body ) {
+    return Invoke-RestMethodWithMsal "POST" $path $body
+}
+function Invoke-AdminAPIPatch( [string]$path, [string]$body ) {
+    return Invoke-RestMethodWithMsal "PATCH" $path $body
 }
 
 ################################################################################################################################################
@@ -106,7 +108,7 @@ function Get-EntraVerifiedIDTenantSettings() {
     Enable-EntraVerifiedIDTenant
 #>
 function Enable-EntraVerifiedIDTenant() {
-    return Invoke-AdminAPIUpdate "POST"  "onboard" ""
+    return Invoke-AdminAPIPost "onboard" ""
 }
 
 function Enable-EntraVerifiedIDTenantQuick( [Parameter(Mandatory=$True)][string]$Name
@@ -117,7 +119,7 @@ $body = @"
     "linkedDomainUrl":"$LinkedDomainUrl"
 }
 "@
-    return Invoke-AdminAPIUpdate "POST"  "onboardZeroConfig" $body 
+    return Invoke-AdminAPIPost "onboardZeroConfig" $body 
 }
 <#
 .SYNOPSIS
@@ -138,7 +140,7 @@ function Remove-EntraVerifiedIDTenantOptOut( [Parameter(Mandatory=$false)][switc
             return
         }
     }
-    return Invoke-AdminAPIUpdate "POST"  "optout" ""
+    return Invoke-AdminAPIPost "optout" ""
 }
 #-----------------------------------------------------------------------------------------------------------------------------------------------
 # Issuer
@@ -187,7 +189,7 @@ function New-EntraVerifiedIDAuthority(  [Parameter(Mandatory=$True)][string]$Nam
     }
 }
 "@
-    return Invoke-AdminAPIUpdate "POST"  "authorities" $body 
+    return Invoke-AdminAPIPost "authorities" $body 
 }
 <#
 .SYNOPSIS
@@ -201,13 +203,13 @@ function New-EntraVerifiedIDAuthority(  [Parameter(Mandatory=$True)][string]$Nam
 .EXAMPLE
     Update-EntraVerifiedIDAuthority -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6" -Name "MyNewName"
 #>
-function Update-EntraVerifiedIDAuthority( [Parameter(Mandatory=$True)][string]$Id, [Parameter(Mandatory=$True)][string]$Name ) {
+function Set-EntraVerifiedIDAuthority( [Parameter(Mandatory=$True)][string]$Id, [Parameter(Mandatory=$True)][string]$Name ) {
     $body = @"
 {
     "name":"$Name"
 }
 "@
-    return Invoke-AdminAPIUpdate "POST" "authorities/$id" $body 
+    return Invoke-AdminAPIPost  "authorities/$id" $body 
 }
 <#
 .SYNOPSIS
@@ -220,14 +222,26 @@ function Update-EntraVerifiedIDAuthority( [Parameter(Mandatory=$True)][string]$I
 .OUTPUTS
     Does not return any data
 .EXAMPLE
-    Rotate-EntraVerifiedIDAuthoritySigningKey -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
+    New-EntraVerifiedIDAuthoritySigningKey -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
 #>
-function Rotate-EntraVerifiedIDAuthoritySigningKey( [Parameter(Mandatory=$True)][string]$AuthorityId ) {
-    #return Invoke-AdminAPIUpdate "POST" "authorities/$id/rotateSigningKey" 
-    return Invoke-AdminAPIUpdate "POST" "authorities/$Authorityid/didInfo/signingKeys/rotate"
+function New-EntraVerifiedIDAuthoritySigningKey( [Parameter(Mandatory=$True)][string]$AuthorityId ) {
+    #return Invoke-AdminAPIPost  "authorities/$id/rotateSigningKey" 
+    return Invoke-AdminAPIPost  "authorities/$Authorityid/didInfo/signingKeys/rotate"
 }
-function Deploy-EntraVerifiedIDAuthoritySigningKey( [Parameter(Mandatory=$True)][string]$AuthorityId ) {
-    return Invoke-AdminAPIUpdate "POST" "authorities/$Authorityid/didInfo/synchronizeWithDidDocument"
+<#
+.SYNOPSIS
+    Start using the new signing key for the Authority
+.DESCRIPTION
+    After you have created a new signing key, you must use this command to tell the Authority to start using it
+.PARAMETER Id
+    Id of the Authority. 
+.OUTPUTS
+    returns the Authority
+.EXAMPLE
+    New-EntraVerifiedIDAuthoritySigningKey -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
+#>
+function Use-EntraVerifiedIDAuthoritySigningKey( [Parameter(Mandatory=$True)][string]$AuthorityId ) {
+    return Invoke-AdminAPIPost  "authorities/$Authorityid/didInfo/synchronizeWithDidDocument"
 }
 
 <#
@@ -256,7 +270,7 @@ function Set-EntraVerifiedIDAuthorityLinkedDomains( [Parameter(Mandatory=$False)
     "domainUrls" : $($domains | ConvertTo-Json)
 }
 "@    
-    return Invoke-AdminAPIUpdate "POST"  "authorities/$Id/updateLinkedDomains" $body
+    return Invoke-AdminAPIPost "authorities/$Id/updateLinkedDomains" $body
 }
 <#
 .SYNOPSIS
@@ -286,7 +300,7 @@ function New-EntraVerifiedIDAuthorityWellKnownDidConfiguration( [Parameter(Manda
     "domainUrl": "$Domain"
 }
 "@    
-    return Invoke-AdminAPIUpdate "POST"  "authorities/$Id/generateWellknownDidConfiguration" $body
+    return Invoke-AdminAPIPost "authorities/$Id/generateWellknownDidConfiguration" $body
 }
 <#
 .SYNOPSIS
@@ -317,9 +331,9 @@ function Get-EntraVerifiedIDAuthority( [Parameter(Mandatory=$False)][string]$Id,
 }
 <#
 .SYNOPSIS
-    Gets a DID Document for an Authority by Id. Only supported by did:web
+    Gets a new DID Document for an Authority by Id. Only supported by did:web
 .DESCRIPTION
-    Gets a DID Document for an Authority by Id. Only supported by did:web
+    Gets a new DID Document for an Authority by Id. Only supported by did:web
 .PARAMETER Id
     Id of the Authority
 .OUTPUTS
@@ -327,8 +341,8 @@ function Get-EntraVerifiedIDAuthority( [Parameter(Mandatory=$False)][string]$Id,
 .EXAMPLE
     Get-EntraVerifiedIDDidDocument -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6"
 #>
-function Get-EntraVerifiedIDDidDocument( [Parameter(Mandatory=$True)][string]$Id ) {
-    return Invoke-AdminAPIUpdate "POST" "authorities/$id/generateDidDocument" 
+function New-EntraVerifiedIDDidDocument( [Parameter(Mandatory=$True)][string]$Id ) {
+    return Invoke-AdminAPIPost "authorities/$id/generateDidDocument" 
 }
 
 <#
@@ -434,8 +448,7 @@ function New-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$Auth
                                       [Parameter(Mandatory=$True)][string]$Name, 
                                       [Parameter(Mandatory=$True)][string]$Rules, 
                                       [Parameter(Mandatory=$True)][string]$Displays,
-                                      [Parameter(Mandatory=$False)][boolean]$AvailableInVcDirectory = $False,
-                                      [Parameter(Mandatory=$False)][array]$issueNotificationAllowedToGroupOids = @()
+                                      [Parameter(Mandatory=$False)][boolean]$AvailableInVcDirectory = $False
                                     ) {
     $body = $null
     $issueNotificationEnabled = $False
@@ -449,7 +462,6 @@ function New-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$Auth
     "name": "$Name",
     "status":  "Enabled",
     "issueNotificationEnabled": $($issueNotificationEnabled.ToString().ToLower()),
-    "issueNotificationAllowedToGroupOids": $groupOids,
     "availableInVcDirectory": $($availableInVcDirectory.ToString().ToLower()),
     "displays": [ $Displays ],
     "rules": $Rules
@@ -459,7 +471,7 @@ function New-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$Auth
         $authorities = Get-EntraVerifiedIDAuthority
         $AuthorityId = $authorities[0].id
     }        
-    return Invoke-AdminAPIUpdate "POST" "authorities/$AuthorityId/contracts" $body 
+    return Invoke-AdminAPIPost  "authorities/$AuthorityId/contracts" $body 
 }
 <#
 .SYNOPSIS
@@ -477,11 +489,11 @@ function New-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$Auth
 .EXAMPLE
     Update-EntraVerifiedIDContract -AuthorityId $AuthorityId -Id $contracId -Body $jsonPayload
 #>
-function Update-EntraVerifiedIDContract( [Parameter(Mandatory=$True)][string]$AuthorityId,
+function Set-EntraVerifiedIDContract( [Parameter(Mandatory=$True)][string]$AuthorityId,
                                          [Parameter(Mandatory=$True)][string]$Id,
                                          [Parameter(Mandatory=$True)]$Body
                                        ) {
-    return Invoke-AdminAPIUpdate "PATCH" "authorities/$AuthorityId/contracts/$Id" $Body
+    return Invoke-AdminAPIPatch "authorities/$AuthorityId/contracts/$Id" $Body
 }
 #-----------------------------------------------------------------------------------------------------------------------------------------------
 # Credentials (ie what is issued to holders)
@@ -546,7 +558,7 @@ function Revoke-EntraVerifiedIDCredential( [Parameter(Mandatory=$false)][string]
         $issuers = Get-EntraVerifiedIDAuthority
         $AuthorityId = $issuers[0].id
     }    
-    return Invoke-AdminAPIUpdate "POST" "authorities/$AuthorityId/contracts/$ContractId/credentials/$CredentialId/revoke" ""
+    return Invoke-AdminAPIPost  "authorities/$AuthorityId/contracts/$ContractId/credentials/$CredentialId/revoke" ""
 }
 ################################################################################################################################################
 # Status API
@@ -633,10 +645,17 @@ function Get-EntraVerifiedIDContractManifest( [Parameter(Mandatory=$False)][stri
 .EXAMPLE
     Get-EntraVerifiedIDDidExplorer -Name "Contoso"
 #>
-function Get-EntraVerifiedIDDidExplorer( [Parameter(Mandatory=$False)][string]$Name, [Parameter(Mandatory=$False)][string]$did ) {
-    if ( $Name ) {
-        $authority = Get-EntraVerifiedIDAuthority -Name $Name
+function Get-EntraVerifiedIDDidDocument( [Parameter(Mandatory=$False)][string]$AuthorityId
+                                       , [Parameter(Mandatory=$False)][string]$Name
+                                       , [Parameter(Mandatory=$False)][string]$did ) {
+    if ( $AuthorityId ) {
+        $authority = Get-EntraVerifiedIDAuthority -Id $AuthorityId
         $did = $authority.didModel.did
+    } else {
+        if ( $Name ) {
+            $authority = Get-EntraVerifiedIDAuthority -Name $Name
+            $did = $authority.didModel.did
+        }
     }
     if ( $did ) {
         $url = "https://discover.did.msidentity.com/v1.0/identifiers/$did"

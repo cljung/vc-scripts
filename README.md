@@ -54,18 +54,18 @@ The powershell module then contains the following commands
 *** Authorities ***
 - Get-EntraVerifiedIDAuthority
 - New-EntraVerifiedIDAuthority
-- Update-EntraVerifiedIDAuthority
+- Set-EntraVerifiedIDAuthority
 - Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration
 - New-EntraVerifiedIDAuthorityWellKnownDidConfiguration
 s- Set-EntraVerifiedIDAuthorityLinkedDomains
-- Rotate-EntraVerifiedIDAuthoritySigningKey
+- New-EntraVerifiedIDAuthoritySigningKey
+- New-EntraVerifiedIDDidDocument
 - Get-EntraVerifiedIDDidDocument
-- Get-EntraVerifiedIDDidExplorer
 
 *** Credential Contracts ***
 - Get-EntraVerifiedIDContract
 - New-EntraVerifiedIDContract
-- Update-EntraVerifiedIDContract
+- Set-EntraVerifiedIDContract
 - Get-EntraVerifiedIDContractManifest
 - Get-EntraVerifiedIDContractManifestURL
 
