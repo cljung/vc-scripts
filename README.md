@@ -57,7 +57,7 @@ The powershell module then contains the following commands
 - Set-EntraVerifiedIDAuthority
 - Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration
 - New-EntraVerifiedIDAuthorityWellKnownDidConfiguration
-s- Set-EntraVerifiedIDAuthorityLinkedDomains
+- Set-EntraVerifiedIDAuthorityLinkedDomains
 - New-EntraVerifiedIDAuthoritySigningKey
 - New-EntraVerifiedIDDidDocument
 - Get-EntraVerifiedIDDidDocument
