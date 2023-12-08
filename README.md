@@ -44,39 +44,30 @@ import-module .\VCAdminAPI.psm1
 
 The powershell module then contains the following commands
 
-*** Signin ***
-- Connect-EntraVerifiedID
-
-*** Tenant ***
-- Enable-EntraVerifiedIDTenant
-- Remove-EntraVerifiedIDTenantOptOut
-
-*** Authorities ***
-- Get-EntraVerifiedIDAuthority
-- New-EntraVerifiedIDAuthority
-- Set-EntraVerifiedIDAuthority
-- Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration
-- New-EntraVerifiedIDAuthorityWellKnownDidConfiguration
-- Set-EntraVerifiedIDAuthorityLinkedDomains
-- New-EntraVerifiedIDAuthoritySigningKey
-- Use-EntraVerifiedIDAuthoritySigningKey
-- New-EntraVerifiedIDDidDocument
-- Get-EntraVerifiedIDDidDocument
-
-*** Credential Contracts ***
-- Get-EntraVerifiedIDContract
-- New-EntraVerifiedIDContract
-- Set-EntraVerifiedIDContract
-- Get-EntraVerifiedIDContractManifest
-- Get-EntraVerifiedIDContractManifestURL
-
-*** Credentials ***
-- Get-EntraVerifiedIDCredentials
-- Revoke-EntraVerifiedIDCredential
-
-*** VC Network ***
-- Get-EntraVerifiedIDNetworkIssuers
-- Get-EntraVerifiedIDNetworkIssuerContracts
+| Area | Command | Description |
+|------|--------|--------|
+| Signin | Connect-EntraVerifiedID | Authenticates a user to start using the commands |
+| Tenant | Enable-EntraVerifiedIDTenant | Onboard Verified ID to an Entra ID tenant |
+| | Remove-EntraVerifiedIDTenantOptOut | Verified ID Opt-out - resets everything |
+| Authorities | New-EntraVerifiedIDAuthority | Create a new authority |
+| | Set-EntraVerifiedIDAuthority | Updates the authority name |
+| | Get-EntraVerifiedIDAuthority | Get/List existing authorities from the tenant
+| | New-EntraVerifiedIDAuthorityWellKnownDidConfiguration | Generates the did-configuration.json content |
+| | Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration | Gets the did-configuration.json content |
+| | Set-EntraVerifiedIDAuthorityLinkedDomains | Sets the linked domains for an authority |
+| | New-EntraVerifiedIDAuthoritySigningKey | Creates a new signing key for the authority |
+| | Use-EntraVerifiedIDAuthoritySigningKey | Starts using the new signing key for the authority |
+| | New-EntraVerifiedIDDidDocument | Generates the DID document |
+| | Get-EntraVerifiedIDDidDocument | Gets the DID document for a did via discovery |
+| Contracts | New-EntraVerifiedIDContract | Creates a new credential contract |
+| | Set-EntraVerifiedIDContract | Updates an existing credential contract |
+| | Get-EntraVerifiedIDContract | Get/List existing contracts |
+| | Get-EntraVerifiedIDContractManifest | Gets the manifest for a credential contract |
+| | Get-EntraVerifiedIDContractManifestURL | gets the manifest URL for a credential contract |
+| Credentials | Get-EntraVerifiedIDCredentials | Returns credentials by searching for the indexed claim |  
+| | Revoke-EntraVerifiedIDCredential | Revokes a credential |
+| Network | Get-EntraVerifiedIDNetworkIssuers | Get/List published issuers by domain name |
+| | Get-EntraVerifiedIDNetworkIssuerContracts | Get credential contract details for a published credential |
 
 ## Test VC Issuance and Presentation using Powershell
 You can test issuance and presentation using just powershell. The two scripts `vc-mini-webserver.ps1` and `vc-post-request.ps1` helps your with that. 
