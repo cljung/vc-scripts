@@ -7,7 +7,8 @@ Github repo for sundry Microsoft Entra Verified ID powershell scripts
 |------|--------|
 | tenant-config.ps1 | Your tenant configuration variables |
 | VCAdminAPI.psm1 | Admin API powershell module |
-| vc-admin-loging.ps1 | shortcut to login in to your tenant |
+| vc-admin-login.ps1 | shortcut to login as a user to your tenant |
+| vc-sp-login.ps1 | shortcut to login using client credentials to your tenant |
 | vc-aadfree-migration.ps1 | Script to migrate an Azure AD tenant to the new 1st party AppIDs |
 | vc-mini-webserver.ps1 | Mini webserver in powershell to test issuance and presentation |
 | vc-post-request.ps1 | Script to create an issuance or presentation request |
