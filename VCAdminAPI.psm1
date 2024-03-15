@@ -22,20 +22,31 @@ This file contains a Powershell module for the EntraVerifiedID Admin API
 function Connect-EntraVerifiedID {
     [cmdletbinding()]
     param( 
-        [Parameter(Mandatory=$True)][Alias('c')][string]$ClientId,
         [Parameter(Mandatory=$True)][Alias('t')][string]$TenantId,
+        [Parameter(Mandatory=$True)][Alias('c')][string]$ClientId,
+        [Parameter(Mandatory=$False)][Alias('k')][string]$ClientSecret,
         [Parameter()][Alias('s')][string]$Scope = "6a8b4b39-c021-437c-b060-5a14a3fd65f3/full_access"
 )
 
 $msalParams = @{ ClientId = $clientId; TenantId = $tenantId; Scopes = $Scope }
-$msalResp = Get-MsalToken @msalParams
+if ( $ClientSecret ) {
+    $msalParams = @{ TenantId = $tenantId; ClientId = $clientId; ClientSecret = (ConvertTo-SecureString -String $spClientSecret -AsPlainText); Scopes = $Scope }
+}
+$msalResp = Get-MsalToken @msalParams -ForceRefresh
 
 $tenantMetadata = invoke-restmethod -Uri "https://login.microsoftonline.com/$tenantId/v2.0/.well-known/openid-configuration"
 $global:tenantRegionScope = $tenantMetadata.tenant_region_scope # WW, NA, EU, AF, AS, OC, SA
 $global:tenantId = $tenantId
 $global:clientId = $clientId
 $global:scope = $scope
+if ( $ClientSecret ) {
+    $global:clientSecret = (ConvertTo-SecureString -String $spClientSecret -AsPlainText)
+} else {
+    $global:clientSecret = $null
+}
 $global:VerifiedIDHostname = "https://verifiedid.did.msidentity.com"
+
+write-Verbose "Tenant $tenantID is in region $($global:tenantRegionScope)"
 }
 
 ################################################################################################################################################
@@ -52,6 +63,9 @@ function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]
         }
     }
     $msalParams = @{ ClientId = $global:clientId; TenantId = $global:tenantId; Scopes = $global:scope }
+    if ( $global:clientSecret ) {
+        $msalParams = @{ ClientId = $global:clientId; TenantId = $global:tenantId; Scopes = $global:scope; ClientSecret = $global:clientSecret }
+    }
     $msalResp = Get-MsalToken @msalParams
     $authHeader =@{ 'Content-Type'='application/json'; 'Authorization'=$msalResp.TokenType + ' ' + $msalResp.AccessToken }
     try {
@@ -63,12 +77,19 @@ function Invoke-RestMethodWithMsal( [string]$httpMethod, [string]$path, [string]
             $resp = Invoke-RestMethod -Method $httpMethod -Uri $url -Headers $authHeader -Body $body -ContentType "application/json" -ErrorAction Stop
         }
     } catch {
+        <#
         $streamReader = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
         $streamReader.BaseStream.Position = 0
         $streamReader.DiscardBufferedData()
         $errResp = $streamReader.ReadToEnd()
-        $streamReader.Close()    
+        $streamReader.Close()        
         write-host $errResp -ForegroundColor "Red" -BackgroundColor "Black"
+        #>
+        if($_.ErrorDetails.Message) {
+            write-host $_.ErrorDetails.Message -ForegroundColor "Red" -BackgroundColor "Black"
+        } else {
+            write-host $_ -ForegroundColor "Red" -BackgroundColor "Black"
+        }
     }
     return $resp    
 }
@@ -80,6 +101,9 @@ function Invoke-AdminAPIPost( [string]$path, [string]$body ) {
 }
 function Invoke-AdminAPIPatch( [string]$path, [string]$body ) {
     return Invoke-RestMethodWithMsal "PATCH" $path $body
+}
+function Invoke-AdminAPIDelete( [string]$path ) {
+    return Invoke-RestMethodWithMsal "DELETE" $path $null
 }
 
 ################################################################################################################################################
@@ -149,7 +173,8 @@ function Remove-EntraVerifiedIDTenantOptOut( [Parameter(Mandatory=$false)][switc
 .SYNOPSIS
     Creates a new Verifiable Credential authority in Entra Verified ID tenant
 .DESCRIPTION
-    Creates a new Verifiable Credential authority in Entra Verified ID, with it's unique DID
+    Creates a new Verifiable Credential authority in Entra Verified ID, with it's unique DID.
+    The user or service principal making the call must have create key permission on the KeyVault specified
 .PARAMETER OrganizationName
     Name of this instance of the Verified ID service, like Contoso, Fabrikam or Woodgrove
 .PARAMETER Domain
@@ -190,6 +215,32 @@ function New-EntraVerifiedIDAuthority(  [Parameter(Mandatory=$True)][string]$Nam
 }
 "@
     return Invoke-AdminAPIPost "authorities" $body 
+}
+<#
+.SYNOPSIS
+    Deletes an Authority
+.DESCRIPTION
+    Deletes an authority, all its contracts and makes the issued credentials useless
+.PARAMETER Id
+    Id of the Authority. 
+.PARAMETER Force
+    Flag to bypass the "are you sure" question
+.OUTPUTS
+    Returns - TBD
+.EXAMPLE
+    Remove-EntraVerifiedIDAuthority -Id "8d3f8247-535f-412d-81d7-3d4d77074ab6" -Force:$True
+#>
+function Remove-EntraVerifiedIDAuthority(  [Parameter(Mandatory=$True)][string]$Id,
+                                           [Parameter(Mandatory=$false)][switch]$Force = $False
+                                    )
+{
+    if (!$Force ) {
+        $answer = (Read-Host "Are you sure you want to delete the authority and all contracts? [Y]es or [N]o").ToLower()
+        if ( !("yes","y" -contains $answer) ) {
+            return
+        }
+    }
+    return Invoke-AdminAPIDelete "authorities/$id"
 }
 <#
 .SYNOPSIS
@@ -302,6 +353,14 @@ function New-EntraVerifiedIDAuthorityWellKnownDidConfiguration( [Parameter(Manda
 "@    
     return Invoke-AdminAPIPost "authorities/$Id/generateWellknownDidConfiguration" $body
 }
+function Get-EntraVerifiedIDAuthorityWellKnownDidConfigurationValidation( [Parameter(Mandatory=$False)][string]$Id
+                                                              ) {
+    if ( !$Id ) {
+        $authorities = Get-EntraVerifiedIDAuthority
+        $Id = $authorities[0].id
+    }    
+    return Invoke-AdminAPIPost "authorities/$Id/validateWellKnownDidConfiguration" ""
+}
 <#
 .SYNOPSIS
     Gets Authorities by Id
@@ -365,7 +424,7 @@ function New-EntraVerifiedIDDidDocument( [Parameter(Mandatory=$True)][string]$Id
 .EXAMPLE
     Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration -Name "Contoso" -Raw
 #>
-function Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration( [Parameter(Mandatory=$True)][string]$Name,
+function Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration( [Parameter(Mandatory=$False)][string]$Name,
                                                                    [Parameter(Mandatory=$false)][switch]$Raw = $False ) {
     $authorities = Get-EntraVerifiedIDAuthority -Name $Name
     $didcfgs = @()
@@ -407,16 +466,23 @@ function Get-EntraVerifiedIDAuthorityLinkedDomainDidConfiguration( [Parameter(Ma
 .EXAMPLE
     Get-EntraVerifiedIDContract -AuthorityId <guid> -Name "VerifiedCredentialExpert"
 #>
-function Get-EntraVerifiedIDContract( [Parameter(Mandatory=$True)][string]$AuthorityId,
+function Get-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$AuthorityId,
                                       [Parameter(Mandatory=$False)][string]$Id,
-                                      [Parameter(Mandatory=$False)][string]$Name
+                                      [Parameter(Mandatory=$False)][string]$Name,
+                                      [Parameter(Mandatory=$False)][string]$Type
                                     ) {
+    if ( !$AuthorityId ) {
+        $AuthorityId = (Get-EntraVerifiedIDAuthority).id
+    }                                       
     if ( $Id ) {
         return Invoke-AdminAPIGet "authorities/$AuthorityId/contracts/$Id"
-    }                                        
+    } 
     $contracts = Invoke-AdminAPIGet "authorities/$AuthorityId/contracts"
     if ( $Name ) {
         return ($contracts.value | where {$_.name -eq $Name } )
+    }
+    if ( $Type ) {
+        return ($contracts.value | where {$_.rules.vc.type -imatch $Type})
     }
     return $contracts.value    
 }
@@ -448,7 +514,8 @@ function New-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$Auth
                                       [Parameter(Mandatory=$True)][string]$Name, 
                                       [Parameter(Mandatory=$True)][string]$Rules, 
                                       [Parameter(Mandatory=$True)][string]$Displays,
-                                      [Parameter(Mandatory=$False)][boolean]$AvailableInVcDirectory = $False
+                                      [Parameter(Mandatory=$False)][boolean]$AvailableInVcDirectory = $False,
+                                      [Parameter(Mandatory=$False)][boolean]$allowOverrideValidityIntervalOnIssuance = $False
                                     ) {
     $body = $null
     $issueNotificationEnabled = $False
@@ -463,6 +530,7 @@ function New-EntraVerifiedIDContract( [Parameter(Mandatory=$False)][string]$Auth
     "status":  "Enabled",
     "issueNotificationEnabled": $($issueNotificationEnabled.ToString().ToLower()),
     "availableInVcDirectory": $($availableInVcDirectory.ToString().ToLower()),
+    "allowOverrideValidityIntervalOnIssuance": $($allowOverrideValidityIntervalOnIssuance.ToString().ToLower()),
     "displays": [ $Displays ],
     "rules": $Rules
 }
@@ -495,6 +563,37 @@ function Set-EntraVerifiedIDContract( [Parameter(Mandatory=$True)][string]$Autho
                                        ) {
     return Invoke-AdminAPIPatch "authorities/$AuthorityId/contracts/$Id" $Body
 }
+<#
+.SYNOPSIS
+    Deletes a credential contract
+.DESCRIPTION
+    Deletes a contract and makes the issued credentials useless
+.PARAMETER Id
+    Id of the Authority. 
+.PARAMETER Id
+    Id of the contract
+.PARAMETER Force
+    Flag to bypass the "are you sure" question
+.OUTPUTS
+    Returns - TBD
+.EXAMPLE
+    Remove-EntraVerifiedIDContract -AuthorityId "8d3f8247-535f-412d-81d7-3d4d77074ab6" -Id "12345" -Force:$True
+#>
+function Remove-EntraVerifiedIDContract(  [Parameter(Mandatory=$True)][string]$AuthorityId,
+                                            [Parameter(Mandatory=$True)][string]$Id,
+                                            [Parameter(Mandatory=$false)][switch]$Force = $False
+                                    )
+{
+    if (!$Force ) {
+        $answer = (Read-Host "Are you sure you want to delete the contract? [Y]es or [N]o").ToLower()
+        if ( !("yes","y" -contains $answer) ) {
+            return
+        }
+    }
+
+    return Invoke-AdminAPIDelete "authorities/$AuthorityId/contracts/$Id"
+}
+
 #-----------------------------------------------------------------------------------------------------------------------------------------------
 # Credentials (ie what is issued to holders)
 #-----------------------------------------------------------------------------------------------------------------------------------------------
